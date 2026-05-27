@@ -6,9 +6,9 @@
   "scripts": {
     "generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ./spacetimedb",
     "publish": "spacetime publish wordsmith --module-path ./spacetimedb",
-    "dev": "spacetime dev --server local --run 'npm run dev:client' -y",
+    "dev": "spacetime dev --server local -y",
     "dev:client": "vite",
-    "dev:cloud": "spacetime dev --server maincloud --run 'npm run dev:client' -y",
+    "dev:cloud": "spacetime dev --server maincloud -y",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

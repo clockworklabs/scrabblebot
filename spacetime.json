@@ -1,4 +1,7 @@
 {
   "server": "maincloud",
-  "module-path": "./spacetimedb"
+  "module-path": "./spacetimedb",
+  "dev": {
+    "run": "npm run dev:client"
+  }
 }
