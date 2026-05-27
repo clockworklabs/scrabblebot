@@ -1,6 +1,12 @@
-// Embedded wordlist — sorted, uppercase, one word per line.
-// Replace `wordlist.txt` with a real Scrabble dictionary (TWL or SOWPODS) for serious play.
+use std::sync::OnceLock;
+
+// Embedded ENABLE1 wordlist (public domain) — sorted, uppercase, one word per line.
 static WORDLIST: &str = include_str!("../wordlist.txt");
+static LINES: OnceLock<Vec<&'static str>> = OnceLock::new();
+
+fn lines() -> &'static [&'static str] {
+    LINES.get_or_init(|| WORDLIST.lines().collect())
+}
 
 pub fn is_valid_word(word: &str) -> bool {
     let target = word.to_ascii_uppercase();
@@ -10,7 +16,5 @@ pub fn is_valid_word(word: &str) -> bool {
     if !target.chars().all(|c| c.is_ascii_uppercase()) {
         return false;
     }
-    // Binary search over sorted lines.
-    let lines: Vec<&str> = WORDLIST.lines().collect();
-    lines.binary_search(&target.as_str()).is_ok()
+    lines().binary_search(&target.as_str()).is_ok()
 }

@@ -18,7 +18,7 @@ Built on [SpacetimeDB](https://spacetimedb.com): the rules, timing, and dictiona
 - **Tiebreak:** higher amount wins; on equal bids, the earlier submission wins.
 - **Currency:** start at 100. Earn currency by playing words; the reward is `base_score × length_multiplier`, where the multiplier ramps from 1.0× (≤3 letters) up to 3.0× (≥7 letters).
 - **Letters:** standard 98-tile Scrabble bag (no blanks). Match ends when the bag is empty.
-- **Dictionary:** embedded in the module from `spacetimedb/wordlist.txt`. The starter wordlist has ~3.3k common short words; replace it with TWL or SOWPODS for a serious tournament.
+- **Dictionary:** the [ENABLE](https://en.wikipedia.org/wiki/Moby_Project#ENABLE) wordlist (~173k words, public domain) is embedded from `spacetimedb/wordlist.txt`. Swap in TWL or SOWPODS if you have a license.
 
 ## Quick start
 
@@ -63,6 +63,5 @@ Bots can use any language SpacetimeDB has an SDK for — TypeScript is just the 
 
 ## Notes / known limitations
 
-- The wordlist is a small placeholder. Drop in a real Scrabble dictionary (TWL06 or SOWPODS) at `spacetimedb/wordlist.txt`, then rebuild and republish the module.
 - `auction_tick` is callable by any client today. For a real tournament, gate it on the module's own identity.
 - No human play — bots only.
