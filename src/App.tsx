@@ -162,16 +162,30 @@ export default function App() {
   const closesAtMs = state.auction ? fmtTimestamp(state.auction.closesAt) : 0;
   const msLeft = Math.max(0, closesAtMs - now);
   const matchStatus = state.match?.status.tag ?? "Lobby";
+  const auctionType = state.match?.auctionType.tag ?? "Vickrey";
 
   return (
     <div className="app">
       <header>
         <h1>Wordsmith</h1>
         <span className="status">
-          {matchStatus.toLowerCase()} · round {state.match?.currentRound ?? 0} · bag{" "}
-          {state.bagRemaining} left
+          {matchStatus.toLowerCase()} · {auctionType.toLowerCase()} · round{" "}
+          {state.match?.currentRound ?? 0} · bag {state.bagRemaining} left
           {matchStatus === "Lobby" && (
             <>
+              {" · "}
+              <select
+                className="button"
+                value={auctionType}
+                onChange={(e) =>
+                  conn?.reducers.setAuctionType({
+                    auctionType: { tag: e.target.value } as never,
+                  })
+                }
+              >
+                <option value="Vickrey">Vickrey</option>
+                <option value="FirstPrice">First-price</option>
+              </select>
               {" · "}
               <button
                 className="button"
@@ -187,6 +201,14 @@ export default function App() {
                 onClick={() => conn?.reducers.startMatch({})}
               >
                 Start match
+              </button>
+            </>
+          )}
+          {matchStatus === "Ended" && (
+            <>
+              {" · "}
+              <button className="button" onClick={() => conn?.reducers.resetMatch({})}>
+                Reset match
               </button>
             </>
           )}

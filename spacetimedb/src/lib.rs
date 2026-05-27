@@ -29,6 +29,12 @@ pub enum AuctionStatus {
 }
 
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub enum AuctionType {
+    FirstPrice,
+    Vickrey,
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
 pub enum BotStrategy {
     Human,        // real client bot — module makes no decisions
     Cheapskate,   // always bids 1
@@ -58,6 +64,7 @@ pub struct MatchState {
     pub current_round: u32,
     pub current_auction_id: Option<u64>,
     pub bag_total: u32,
+    pub auction_type: AuctionType,
     pub started_at: Option<Timestamp>,
     pub ended_at: Option<Timestamp>,
 }
@@ -173,6 +180,7 @@ pub fn init(ctx: &ReducerContext) {
         current_round: 0,
         current_auction_id: None,
         bag_total: total,
+        auction_type: AuctionType::Vickrey,
         started_at: None,
         ended_at: None,
     });
@@ -268,6 +276,102 @@ pub fn spawn_simulated_bot(
 }
 
 // ---------- Match control ----------
+
+#[reducer]
+pub fn set_auction_type(ctx: &ReducerContext, auction_type: AuctionType) -> Result<(), String> {
+    let m = ctx
+        .db
+        .match_state()
+        .id()
+        .find(SINGLETON_MATCH_ID)
+        .ok_or("No match")?;
+    if m.status != MatchStatus::Lobby {
+        return Err("Can only change auction type before the match starts".into());
+    }
+    ctx.db.match_state().id().update(MatchState {
+        auction_type,
+        ..m
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn reset_match(ctx: &ReducerContext) -> Result<(), String> {
+    // Clear all per-match tables.
+    let auction_ids: Vec<u64> = ctx.db.auction().iter().map(|a| a.id).collect();
+    for id in auction_ids {
+        ctx.db.auction().id().delete(&id);
+    }
+    let result_ids: Vec<u64> = ctx
+        .db
+        .auction_result()
+        .iter()
+        .map(|r| r.auction_id)
+        .collect();
+    for id in result_ids {
+        ctx.db.auction_result().auction_id().delete(&id);
+    }
+    let bid_ids: Vec<u64> = ctx.db.pending_bid().iter().map(|b| b.id).collect();
+    for id in bid_ids {
+        ctx.db.pending_bid().id().delete(&id);
+    }
+    let holding_ids: Vec<u64> = ctx.db.holding().iter().map(|h| h.id).collect();
+    for id in holding_ids {
+        ctx.db.holding().id().delete(&id);
+    }
+    let play_ids: Vec<u64> = ctx.db.word_play().iter().map(|p| p.id).collect();
+    for id in play_ids {
+        ctx.db.word_play().id().delete(&id);
+    }
+    let schedule_ids: Vec<u64> = ctx
+        .db
+        .auction_schedule()
+        .iter()
+        .map(|s| s.scheduled_id)
+        .collect();
+    for id in schedule_ids {
+        ctx.db.auction_schedule().scheduled_id().delete(&id);
+    }
+    // Refill the bag from scratch.
+    let existing_letters: Vec<String> = ctx.db.bag_letter().iter().map(|b| b.letter).collect();
+    for l in existing_letters {
+        ctx.db.bag_letter().letter().delete(&l);
+    }
+    let total: u32 = letters::DEFAULT_BAG.iter().map(|(_, c)| c).sum();
+    for (letter, count) in letters::DEFAULT_BAG.iter() {
+        ctx.db.bag_letter().insert(BagLetter {
+            letter: letter.to_string(),
+            remaining: *count,
+        });
+    }
+    // Reset every bot's balance and score, but keep registrations.
+    let bots: Vec<Bot> = ctx.db.bot().iter().collect();
+    for bot in bots {
+        ctx.db.bot().identity().update(Bot {
+            balance: STARTING_BALANCE,
+            score: 0,
+            ..bot
+        });
+    }
+    // Reset the match singleton, preserving the chosen auction type.
+    let m = ctx
+        .db
+        .match_state()
+        .id()
+        .find(SINGLETON_MATCH_ID)
+        .ok_or("No match")?;
+    ctx.db.match_state().id().update(MatchState {
+        status: MatchStatus::Lobby,
+        current_round: 0,
+        current_auction_id: None,
+        bag_total: total,
+        started_at: None,
+        ended_at: None,
+        ..m
+    });
+    log::info!("Match reset");
+    Ok(())
+}
 
 #[reducer]
 pub fn start_match(ctx: &ReducerContext) -> Result<(), String> {
@@ -497,16 +601,25 @@ pub fn auction_tick(ctx: &ReducerContext, _job: AuctionSchedule) {
         .bid_by_auction()
         .filter(&auction_id)
         .collect();
-    // Vickrey (second-price) auction. Sort bids descending by amount; ties
-    // broken by earlier submission (lower id). Winner pays the runner-up's
-    // bid, or AUCTION_RESERVE if they're the only bidder.
+    // Sort bids descending by amount; ties broken by earlier submission.
     let mut sorted: Vec<&PendingBid> = bids.iter().filter(|b| b.amount > 0).collect();
     sorted.sort_by(|a, b| b.amount.cmp(&a.amount).then(a.id.cmp(&b.id)));
 
-    let (winner, top_bid, paid) = match sorted.as_slice() {
-        [] => (None, 0, 0),
-        [only] => (Some(only.bidder), only.amount, AUCTION_RESERVE.min(only.amount)),
-        [first, second, ..] => (Some(first.bidder), first.amount, second.amount),
+    // Auction type determines what the winner pays. FirstPrice: pays own bid.
+    // Vickrey: pays runner-up's bid (or AUCTION_RESERVE if they're the only
+    // bidder).
+    let (winner, top_bid, paid) = match (m.auction_type.clone(), sorted.as_slice()) {
+        (_, []) => (None, 0, 0),
+        (AuctionType::FirstPrice, [only]) => (Some(only.bidder), only.amount, only.amount),
+        (AuctionType::FirstPrice, [first, ..]) => {
+            (Some(first.bidder), first.amount, first.amount)
+        }
+        (AuctionType::Vickrey, [only]) => {
+            (Some(only.bidder), only.amount, AUCTION_RESERVE.min(only.amount))
+        }
+        (AuctionType::Vickrey, [first, second, ..]) => {
+            (Some(first.bidder), first.amount, second.amount)
+        }
     };
 
     let mut sim_winner: Option<Identity> = None;
