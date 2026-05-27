@@ -26,6 +26,14 @@ pub enum AuctionStatus {
     Closed,
 }
 
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub enum BotStrategy {
+    Human,        // real client bot — module makes no decisions
+    Cheapskate,   // always bids 1
+    ValueBidder,  // bids letter face value + 1
+    Aggressive,   // bids letter value × 2 + 2
+}
+
 #[table(accessor = bot, public)]
 pub struct Bot {
     #[primary_key]
@@ -36,6 +44,8 @@ pub struct Bot {
     pub score: i64,
     pub connected: bool,
     pub registered_at: Timestamp,
+    pub is_simulated: bool,
+    pub strategy: BotStrategy,
 }
 
 #[table(accessor = match_state, public)]
@@ -212,8 +222,45 @@ pub fn register_bot(ctx: &ReducerContext, name: String) -> Result<(), String> {
         score: 0,
         connected: true,
         registered_at: ctx.timestamp,
+        is_simulated: false,
+        strategy: BotStrategy::Human,
     });
     log::info!("Bot registered: {}", trimmed);
+    Ok(())
+}
+
+#[reducer]
+pub fn spawn_simulated_bot(
+    ctx: &ReducerContext,
+    name: String,
+    strategy: BotStrategy,
+) -> Result<(), String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() || trimmed.len() > 32 {
+        return Err("Name must be 1-32 characters".into());
+    }
+    if matches!(strategy, BotStrategy::Human) {
+        return Err("Simulated bots cannot use the Human strategy".into());
+    }
+    if ctx.db.bot().name().find(&trimmed.to_string()).is_some() {
+        return Err("Name already taken".into());
+    }
+    // Deterministic fabricated identity so simulated bots persist across calls.
+    let identity = Identity::from_claims("sim", trimmed);
+    if ctx.db.bot().identity().find(identity).is_some() {
+        return Err("Simulated bot already exists".into());
+    }
+    ctx.db.bot().insert(Bot {
+        identity,
+        name: trimmed.to_string(),
+        balance: STARTING_BALANCE,
+        score: 0,
+        connected: true,
+        registered_at: ctx.timestamp,
+        is_simulated: true,
+        strategy,
+    });
+    log::info!("Simulated bot spawned: {}", trimmed);
     Ok(())
 }
 
@@ -258,6 +305,9 @@ pub fn start_match(ctx: &ReducerContext) -> Result<(), String> {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Time(closes_at),
     });
+
+    // Sim bots bid on the opening auction too.
+    simulate_bids(ctx, &auction);
 
     log::info!("Match started; first auction id={}", auction.id);
     Ok(())
@@ -454,9 +504,11 @@ pub fn auction_tick(ctx: &ReducerContext, _job: AuctionSchedule) {
         None => (None, 0),
     };
 
+    let mut sim_winner: Option<Identity> = None;
     if let Some(w) = winner {
         if let Some(bot) = ctx.db.bot().identity().find(w) {
             if bot.balance >= winning_bid {
+                let is_sim = bot.is_simulated;
                 ctx.db.bot().identity().update(Bot {
                     balance: bot.balance - winning_bid,
                     ..bot
@@ -482,6 +534,9 @@ pub fn auction_tick(ctx: &ReducerContext, _job: AuctionSchedule) {
                         count: 1,
                     });
                 }
+                if is_sim {
+                    sim_winner = Some(w);
+                }
             }
         }
     } else {
@@ -502,6 +557,11 @@ pub fn auction_tick(ctx: &ReducerContext, _job: AuctionSchedule) {
     });
     for b in bids {
         ctx.db.pending_bid().id().delete(&b.id);
+    }
+
+    // Now that the winner has the tile, let simulated winners try a word.
+    if let Some(w) = sim_winner {
+        simulate_word_play(ctx, w);
     }
 
     // Open next auction or end the match.
@@ -540,6 +600,9 @@ pub fn auction_tick(ctx: &ReducerContext, _job: AuctionSchedule) {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Time(closes_at),
     });
+
+    // Let every simulated bot bid on the newly opened auction.
+    simulate_bids(ctx, &next_auction);
 }
 
 // ---------- Helpers ----------
@@ -595,4 +658,115 @@ fn return_to_bag(ctx: &ReducerContext, letter: &str) {
             ..m
         });
     }
+}
+
+// ---------- Simulated-bot logic ----------
+
+fn decide_bid(strategy: &BotStrategy, letter: &str, balance: i64) -> i64 {
+    let c = letter.chars().next().unwrap_or('A');
+    let value = letters::letter_value(c) as i64;
+    let bid = match strategy {
+        BotStrategy::Human => return 0,
+        BotStrategy::Cheapskate => 1,
+        BotStrategy::ValueBidder => value + 1,
+        BotStrategy::Aggressive => value * 2 + 2,
+    };
+    bid.min(balance).max(0)
+}
+
+fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
+    let sims: Vec<Bot> = ctx.db.bot().iter().filter(|b| b.is_simulated).collect();
+    for bot in sims {
+        let amount = decide_bid(&bot.strategy, &auction.letter, bot.balance);
+        if amount <= 0 {
+            continue;
+        }
+        // Clear any prior bid by this sim bot on this auction.
+        let prior: Vec<u64> = ctx
+            .db
+            .pending_bid()
+            .bid_by_auction()
+            .filter(&auction.id)
+            .filter(|b| b.bidder == bot.identity)
+            .map(|b| b.id)
+            .collect();
+        for id in prior {
+            ctx.db.pending_bid().id().delete(&id);
+        }
+        ctx.db.pending_bid().insert(PendingBid {
+            id: 0,
+            auction_id: auction.id,
+            bidder: bot.identity,
+            amount,
+            submitted_at: ctx.timestamp,
+        });
+    }
+}
+
+fn simulate_word_play(ctx: &ReducerContext, bot_identity: Identity) {
+    let Some(bot) = ctx.db.bot().identity().find(bot_identity) else {
+        return;
+    };
+    let holdings: Vec<Holding> = ctx
+        .db
+        .holding()
+        .holding_by_bot()
+        .filter(&bot_identity)
+        .collect();
+    let mut rack: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
+    for h in &holdings {
+        if let Some(c) = h.letter.chars().next() {
+            *rack.entry(c).or_insert(0) += h.count;
+        }
+    }
+    // Require at least a 3-letter word, since 2-letter words pay 1x with little upside.
+    let Some(word) = dictionary::find_best_playable(&rack, 3) else {
+        return;
+    };
+
+    // Deduct letters.
+    let mut needed: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
+    for c in word.chars() {
+        *needed.entry(c).or_insert(0) += 1;
+    }
+    let mut by_letter: std::collections::HashMap<char, (u64, u32)> =
+        std::collections::HashMap::new();
+    for h in &holdings {
+        if let Some(c) = h.letter.chars().next() {
+            by_letter.insert(c, (h.id, h.count));
+        }
+    }
+    for (c, n) in &needed {
+        let (hid, ct) = by_letter[c];
+        let new_ct = ct - n;
+        if new_ct == 0 {
+            ctx.db.holding().id().delete(&hid);
+        } else if let Some(h) = ctx.db.holding().id().find(&hid) {
+            ctx.db.holding().id().update(Holding {
+                count: new_ct,
+                ..h
+            });
+        }
+    }
+
+    let base_score: i64 = word.chars().map(|c| letters::letter_value(c) as i64).sum();
+    let (num, denom) = letters::length_multiplier(word.len());
+    let total_reward = base_score * num / denom;
+    let bonus = total_reward - base_score;
+
+    ctx.db.bot().identity().update(Bot {
+        balance: bot.balance + total_reward,
+        score: bot.score + total_reward,
+        ..bot
+    });
+    ctx.db.word_play().insert(WordPlay {
+        id: 0,
+        bot: bot_identity,
+        word: word.clone(),
+        base_score,
+        bonus,
+        total_reward,
+        played_at: ctx.timestamp,
+    });
+    log::info!("[sim] played '{}' for {}", word, total_reward);
 }

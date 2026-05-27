@@ -6,9 +6,9 @@
   "scripts": {
     "generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ./spacetimedb",
     "publish": "spacetime publish --module-path ./spacetimedb",
-    "dev": "spacetime dev --server maincloud -y",
+    "dev": "spacetime dev --server maincloud --delete-data on-conflict -y",
     "dev:client": "vite",
-    "dev:local": "spacetime dev --server local -y",
+    "dev:local": "spacetime dev --server local --delete-data on-conflict -y",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

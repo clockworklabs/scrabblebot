@@ -86,6 +86,14 @@ function rackTiles(racks: Map<string, Map<string, number>>, bot: Identity): stri
   return tiles;
 }
 
+function spawnSampleBots(conn: DbConnection) {
+  // Four sim bots with mixed strategies — one click and you've got a full match.
+  conn.reducers.spawnSimulatedBot({ name: "Cheapo", strategy: { tag: "Cheapskate" } });
+  conn.reducers.spawnSimulatedBot({ name: "Valor", strategy: { tag: "ValueBidder" } });
+  conn.reducers.spawnSimulatedBot({ name: "Brutus", strategy: { tag: "Aggressive" } });
+  conn.reducers.spawnSimulatedBot({ name: "Hagrid", strategy: { tag: "ValueBidder" } });
+}
+
 function fmtTimestamp(ts: { __timestamp_micros_since_unix_epoch__: bigint }): number {
   return Number(ts.__timestamp_micros_since_unix_epoch__) / 1000;
 }
@@ -164,6 +172,14 @@ export default function App() {
           {state.bagRemaining} left
           {matchStatus === "Lobby" && (
             <>
+              {" · "}
+              <button
+                className="button"
+                disabled={!conn}
+                onClick={() => spawnSampleBots(conn!)}
+              >
+                Add sample bots
+              </button>
               {" · "}
               <button
                 className="button"
