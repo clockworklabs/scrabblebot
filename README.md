@@ -25,15 +25,19 @@ The web client lives at the repo root (standard SpacetimeDB project layout); the
 
 ## Quick start
 
-1. **Publish the module & run the spectator UI** (from repo root):
+1. **Start a local SpacetimeDB server** in one terminal:
    ```bash
-   npm install
-   npm run publish     # spacetime publish wordsmith
-   npm run generate    # generates module bindings into src/module_bindings
-   npm run dev
+   spacetime start
    ```
 
-2. **Run one or more bots** (in another terminal):
+2. **Run dev mode** (from repo root, another terminal):
+   ```bash
+   npm install
+   npm run dev
+   ```
+   This launches `spacetime dev` (auto-builds + auto-publishes the module on file changes, regenerates client bindings) *and* the Vite client together. Edit `spacetimedb/src/lib.rs` and changes hot-reload through to the browser.
+
+3. **Run one or more bots** (yet another terminal):
    ```bash
    cd bot-starter
    npm install
@@ -42,7 +46,14 @@ The web client lives at the repo root (standard SpacetimeDB project layout); the
    ```
    Start a second bot in another terminal (`BOT_NAME=bob npm start`) so there's competition.
 
-3. **Start the match** from the spectator UI ("Start match" button), or call the `start_match` reducer directly.
+4. **Start the match** from the spectator UI ("Start match" button), or call the `start_match` reducer directly.
+
+### Other npm scripts
+
+- `npm run dev:cloud` — same as `dev` but uses maincloud (skip step 1, but slower iteration).
+- `npm run publish` — one-shot publish to maincloud.
+- `npm run generate` — regenerate client bindings without the watcher.
+- `npm run build` / `npm run preview` — production build of the spectator.
 
 ## Writing a bot
 
