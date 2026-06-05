@@ -43,6 +43,20 @@ pub enum BotStrategy {
     Aggressive,
 }
 
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub enum TournamentStatus {
+    Lobby,
+    Swiss,
+    Bracket,
+    Ended,
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub enum TournamentPhase {
+    Swiss,
+    Bracket,
+}
+
 // ---------- Tables ----------
 
 // Bot — global registration. No per-match state lives here anymore.
@@ -199,6 +213,90 @@ pub struct AuctionSchedule {
     pub scheduled_id: u64,
     pub scheduled_at: ScheduleAt,
     pub match_id: u64,
+}
+
+// Per-bot aggregate stats across all matches. ELO rating + counters.
+#[table(accessor = bot_stats, public)]
+#[derive(Clone)]
+pub struct BotStats {
+    #[primary_key]
+    pub bot: Identity,
+    pub rating: i32, // ELO; new bots start at 1000
+    pub matches_played: u32,
+    pub wins: u32, // first-place finishes
+    pub total_score: i64,
+    pub last_played: Option<Timestamp>,
+}
+
+// Singleton-ish config row (id always 0) controlling the continuous matchmaker.
+#[table(accessor = matchmaker_config, public)]
+pub struct MatchmakerConfig {
+    #[primary_key]
+    pub id: u32,
+    pub enabled: bool,
+    pub match_size_min: u32,
+    pub match_size_max: u32,
+    pub interval_ms: u64,
+    pub auction_type: AuctionType,
+}
+
+#[table(accessor = matchmaker_schedule, scheduled(matchmaker_tick))]
+pub struct MatchmakerSchedule {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: ScheduleAt,
+}
+
+#[table(accessor = tournament, public)]
+#[derive(Clone)]
+pub struct Tournament {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub status: TournamentStatus,
+    pub swiss_rounds_total: u32,
+    pub current_round: u32,
+    pub top_cut: u32,
+    pub match_size: u32,
+    pub auction_type: AuctionType,
+    pub created_at: Timestamp,
+    pub ended_at: Option<Timestamp>,
+}
+
+// One row per bot competing in a tournament.
+#[table(
+    accessor = tournament_entry,
+    public,
+    index(accessor = te_by_tournament, btree(columns = [tournament_id])),
+    index(accessor = te_by_bot, btree(columns = [bot]))
+)]
+#[derive(Clone)]
+pub struct TournamentEntry {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub tournament_id: u64,
+    pub bot: Identity,
+    pub swiss_points: i32,
+    pub eliminated: bool,
+}
+
+// Links a Match to a tournament round.
+#[table(
+    accessor = tournament_match,
+    public,
+    index(accessor = tm_by_tournament, btree(columns = [tournament_id])),
+    index(accessor = tm_by_match, btree(columns = [match_id]))
+)]
+pub struct TournamentMatch {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub tournament_id: u64,
+    pub match_id: u64,
+    pub round: u32,
+    pub phase: TournamentPhase,
 }
 
 // ---------- Views ----------
@@ -473,6 +571,495 @@ pub fn submit_word(ctx: &ReducerContext, match_id: u64, word: String) -> Result<
     play_word(ctx, participant, &word_upper)
 }
 
+// ---------- Matchmaker ----------
+
+#[reducer]
+pub fn set_matchmaker_enabled(
+    ctx: &ReducerContext,
+    enabled: bool,
+    match_size_min: u32,
+    match_size_max: u32,
+    interval_ms: u64,
+    auction_type: AuctionType,
+) -> Result<(), String> {
+    if match_size_min < 2 || match_size_max < match_size_min {
+        return Err("Need match_size_min >= 2 and max >= min".into());
+    }
+    if interval_ms < 1000 {
+        return Err("Matchmaker interval must be >= 1000 ms".into());
+    }
+    let existing = ctx.db.matchmaker_config().id().find(0);
+    if let Some(cfg) = existing {
+        ctx.db.matchmaker_config().id().update(MatchmakerConfig {
+            enabled,
+            match_size_min,
+            match_size_max,
+            interval_ms,
+            auction_type,
+            ..cfg
+        });
+    } else {
+        ctx.db.matchmaker_config().insert(MatchmakerConfig {
+            id: 0,
+            enabled,
+            match_size_min,
+            match_size_max,
+            interval_ms,
+            auction_type,
+        });
+    }
+    if enabled && !is_matchmaker_scheduled(ctx) {
+        ctx.db.matchmaker_schedule().insert(MatchmakerSchedule {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::Time(
+                ctx.timestamp + Duration::from_millis(interval_ms),
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn is_matchmaker_scheduled(ctx: &ReducerContext) -> bool {
+    ctx.db.matchmaker_schedule().iter().next().is_some()
+}
+
+#[reducer]
+pub fn matchmaker_tick(ctx: &ReducerContext, _job: MatchmakerSchedule) {
+    let cfg = match ctx.db.matchmaker_config().id().find(0) {
+        Some(c) => c,
+        None => return,
+    };
+    if !cfg.enabled {
+        return;
+    }
+
+    // Eligible bots: registered, not currently in a running match.
+    let mut busy_bot_ids = std::collections::HashSet::new();
+    let running_matches: Vec<u64> = ctx
+        .db
+        .match_state()
+        .iter()
+        .filter(|m| m.status == MatchStatus::Running)
+        .map(|m| m.id)
+        .collect();
+    for mid in &running_matches {
+        for p in ctx.db.match_participant().mp_by_match().filter(*mid) {
+            busy_bot_ids.insert(p.bot);
+        }
+    }
+    let mut available: Vec<Identity> = ctx
+        .db
+        .bot()
+        .iter()
+        .filter(|b| !busy_bot_ids.contains(&b.identity))
+        .map(|b| b.identity)
+        .collect();
+
+    if available.len() >= cfg.match_size_min as usize {
+        let take = (cfg.match_size_max as usize).min(available.len());
+        // Shuffle deterministically using ctx.rng.
+        for i in (1..available.len()).rev() {
+            let j = ctx.rng().gen_range(0..=i);
+            available.swap(i, j);
+        }
+        let roster: Vec<Identity> = available.into_iter().take(take).collect();
+        let _ = start_match_with(ctx, cfg.auction_type.clone(), roster);
+    }
+
+    // Reschedule next tick.
+    ctx.db.matchmaker_schedule().insert(MatchmakerSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(
+            ctx.timestamp + Duration::from_millis(cfg.interval_ms),
+        ),
+    });
+}
+
+// ---------- Tournament ----------
+
+#[reducer]
+pub fn start_tournament(
+    ctx: &ReducerContext,
+    swiss_rounds_total: u32,
+    top_cut: u32,
+    match_size: u32,
+    auction_type: AuctionType,
+) -> Result<(), String> {
+    if match_size < 2 {
+        return Err("Tournament match_size must be >= 2".into());
+    }
+    if swiss_rounds_total < 1 {
+        return Err("Need at least 1 Swiss round".into());
+    }
+    if top_cut < 2 {
+        return Err("top_cut must be >= 2".into());
+    }
+    // For simplicity, require an even number of bots that's >= match_size.
+    let bots: Vec<Identity> = ctx.db.bot().iter().map(|b| b.identity).collect();
+    if bots.len() < match_size as usize {
+        return Err(format!(
+            "Need at least {} registered bots to start",
+            match_size
+        ));
+    }
+    let t = ctx.db.tournament().insert(Tournament {
+        id: 0,
+        status: TournamentStatus::Swiss,
+        swiss_rounds_total,
+        current_round: 0,
+        top_cut,
+        match_size,
+        auction_type: auction_type.clone(),
+        created_at: ctx.timestamp,
+        ended_at: None,
+    });
+    for bot in &bots {
+        ctx.db.tournament_entry().insert(TournamentEntry {
+            id: 0,
+            tournament_id: t.id,
+            bot: *bot,
+            swiss_points: 0,
+            eliminated: false,
+        });
+    }
+    start_swiss_round(ctx, t.id, 1)?;
+    Ok(())
+}
+
+fn start_swiss_round(
+    ctx: &ReducerContext,
+    tournament_id: u64,
+    round: u32,
+) -> Result<(), String> {
+    let t = ctx
+        .db
+        .tournament()
+        .id()
+        .find(tournament_id)
+        .ok_or("Unknown tournament")?;
+    ctx.db.tournament().id().update(Tournament {
+        current_round: round,
+        ..t.clone()
+    });
+    // Sort entries by current Swiss points (desc); round 1 is effectively
+    // random because everyone is tied at 0. Then pair adjacent groups.
+    let mut entries: Vec<TournamentEntry> = ctx
+        .db
+        .tournament_entry()
+        .te_by_tournament()
+        .filter(tournament_id)
+        .filter(|e| !e.eliminated)
+        .collect();
+    if round == 1 {
+        // randomize once
+        for i in (1..entries.len()).rev() {
+            let j = ctx.rng().gen_range(0..=i);
+            entries.swap(i, j);
+        }
+    } else {
+        entries.sort_by(|a, b| b.swiss_points.cmp(&a.swiss_points));
+    }
+    pair_into_matches(ctx, &t, &entries, round, TournamentPhase::Swiss)
+}
+
+fn pair_into_matches(
+    ctx: &ReducerContext,
+    t: &Tournament,
+    entries: &[TournamentEntry],
+    round: u32,
+    phase: TournamentPhase,
+) -> Result<(), String> {
+    let match_size = t.match_size as usize;
+    let mut i = 0;
+    while i + match_size <= entries.len() {
+        let roster: Vec<Identity> = entries[i..i + match_size].iter().map(|e| e.bot).collect();
+        let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
+        start_match_with(ctx, t.auction_type.clone(), roster)?;
+        // The match just created has the highest id.
+        let new_match_id = ctx
+            .db
+            .match_state()
+            .iter()
+            .map(|m| m.id)
+            .filter(|id| !prev_matches.contains(id))
+            .max()
+            .unwrap_or(0);
+        ctx.db.tournament_match().insert(TournamentMatch {
+            id: 0,
+            tournament_id: t.id,
+            match_id: new_match_id,
+            round,
+            phase: phase.clone(),
+        });
+        i += match_size;
+    }
+    Ok(())
+}
+
+// Called from auction_tick when a match ends. If that match was part of a
+// tournament, award Swiss points (or eliminate bracket losers) and, if the
+// round is now complete, start the next round (or end the tournament).
+fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
+    update_elo_at_match_end(ctx, match_id);
+
+    let Some(tm) = ctx
+        .db
+        .tournament_match()
+        .tm_by_match()
+        .filter(match_id)
+        .next()
+    else {
+        return;
+    };
+    let Some(t) = ctx.db.tournament().id().find(tm.tournament_id) else {
+        return;
+    };
+
+    // Sort participants by final score desc to determine placements.
+    let participants: Vec<MatchParticipant> = ctx
+        .db
+        .match_participant()
+        .mp_by_match()
+        .filter(match_id)
+        .collect();
+    let mut placed = participants;
+    placed.sort_by(|a, b| b.score.cmp(&a.score));
+
+    match tm.phase {
+        TournamentPhase::Swiss => {
+            // Award Swiss points: 1st = N, 2nd = N-1, ... last = 1.
+            let n = placed.len() as i32;
+            for (idx, p) in placed.iter().enumerate() {
+                let pts = n - idx as i32;
+                let entry: Option<TournamentEntry> = ctx
+                    .db
+                    .tournament_entry()
+                    .te_by_tournament()
+                    .filter(t.id)
+                    .find(|e| e.bot == p.bot);
+                if let Some(e) = entry {
+                    ctx.db.tournament_entry().id().update(TournamentEntry {
+                        swiss_points: e.swiss_points + pts,
+                        ..e
+                    });
+                }
+            }
+        }
+        TournamentPhase::Bracket => {
+            // Top half advance; bottom half eliminated.
+            let cutoff = placed.len() / 2;
+            for (idx, p) in placed.iter().enumerate() {
+                if idx >= cutoff {
+                    let entry: Option<TournamentEntry> = ctx
+                        .db
+                        .tournament_entry()
+                        .te_by_tournament()
+                        .filter(t.id)
+                        .find(|e| e.bot == p.bot);
+                    if let Some(e) = entry {
+                        ctx.db.tournament_entry().id().update(TournamentEntry {
+                            eliminated: true,
+                            ..e
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Is this round complete? All TournamentMatch rows for this round refer
+    // to Matches that are Ended.
+    let round_done = ctx
+        .db
+        .tournament_match()
+        .tm_by_tournament()
+        .filter(t.id)
+        .filter(|m| m.round == tm.round && m.phase == tm.phase)
+        .all(|m| {
+            ctx.db
+                .match_state()
+                .id()
+                .find(m.match_id)
+                .map(|mm| mm.status == MatchStatus::Ended)
+                .unwrap_or(false)
+        });
+    if !round_done {
+        return;
+    }
+    advance_tournament(ctx, t.id);
+}
+
+fn advance_tournament(ctx: &ReducerContext, tournament_id: u64) {
+    let Some(t) = ctx.db.tournament().id().find(tournament_id) else {
+        return;
+    };
+    match t.status {
+        TournamentStatus::Swiss => {
+            if t.current_round < t.swiss_rounds_total {
+                let _ = start_swiss_round(ctx, t.id, t.current_round + 1);
+            } else {
+                // Cut to top N, enter bracket phase.
+                let mut entries: Vec<TournamentEntry> = ctx
+                    .db
+                    .tournament_entry()
+                    .te_by_tournament()
+                    .filter(t.id)
+                    .collect();
+                entries.sort_by(|a, b| b.swiss_points.cmp(&a.swiss_points));
+                let kept = t.top_cut as usize;
+                for (i, e) in entries.iter().enumerate() {
+                    if i >= kept {
+                        ctx.db.tournament_entry().id().update(TournamentEntry {
+                            eliminated: true,
+                            ..e.clone()
+                        });
+                    }
+                }
+                ctx.db.tournament().id().update(Tournament {
+                    status: TournamentStatus::Bracket,
+                    current_round: 0,
+                    ..t.clone()
+                });
+                let _ = start_bracket_round(ctx, t.id);
+            }
+        }
+        TournamentStatus::Bracket => {
+            let remaining = ctx
+                .db
+                .tournament_entry()
+                .te_by_tournament()
+                .filter(t.id)
+                .filter(|e| !e.eliminated)
+                .count();
+            if remaining <= 1 {
+                ctx.db.tournament().id().update(Tournament {
+                    status: TournamentStatus::Ended,
+                    ended_at: Some(ctx.timestamp),
+                    ..t
+                });
+            } else {
+                let _ = start_bracket_round(ctx, t.id);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn start_bracket_round(
+    ctx: &ReducerContext,
+    tournament_id: u64,
+) -> Result<(), String> {
+    let t = ctx
+        .db
+        .tournament()
+        .id()
+        .find(tournament_id)
+        .ok_or("Unknown tournament")?;
+    let entries: Vec<TournamentEntry> = ctx
+        .db
+        .tournament_entry()
+        .te_by_tournament()
+        .filter(t.id)
+        .filter(|e| !e.eliminated)
+        .collect();
+    if entries.len() < 2 {
+        return Ok(());
+    }
+    let next_round = t.current_round + 1;
+    ctx.db.tournament().id().update(Tournament {
+        current_round: next_round,
+        ..t.clone()
+    });
+    // For finals (2 left), reduce match_size to 2 so it's a 1v1.
+    let effective = if entries.len() < t.match_size as usize {
+        let mut t2 = t.clone();
+        t2.match_size = entries.len() as u32;
+        t2
+    } else {
+        t.clone()
+    };
+    pair_into_matches(ctx, &effective, &entries, next_round, TournamentPhase::Bracket)
+}
+
+// ---------- ELO ----------
+
+fn get_or_init_stats(ctx: &ReducerContext, bot: Identity) -> BotStats {
+    ctx.db.bot_stats().bot().find(bot).unwrap_or(BotStats {
+        bot,
+        rating: 1000,
+        matches_played: 0,
+        wins: 0,
+        total_score: 0,
+        last_played: None,
+    })
+}
+
+fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
+    let mut placed: Vec<MatchParticipant> = ctx
+        .db
+        .match_participant()
+        .mp_by_match()
+        .filter(match_id)
+        .collect();
+    if placed.len() < 2 {
+        return;
+    }
+    placed.sort_by(|a, b| b.score.cmp(&a.score));
+
+    let k: f64 = 32.0;
+    // Build a mutable ratings map seeded from current stats.
+    let mut ratings: std::collections::HashMap<Identity, f64> =
+        std::collections::HashMap::new();
+    for p in &placed {
+        let s = get_or_init_stats(ctx, p.bot);
+        ratings.insert(p.bot, s.rating as f64);
+    }
+    let mut deltas: std::collections::HashMap<Identity, f64> =
+        std::collections::HashMap::new();
+    for i in 0..placed.len() {
+        for j in (i + 1)..placed.len() {
+            // i ranks above j (higher score). If tied, treat as draw.
+            let a = placed[i].bot;
+            let b = placed[j].bot;
+            let ra = *ratings.get(&a).unwrap();
+            let rb = *ratings.get(&b).unwrap();
+            let expected_a = 1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0));
+            let (actual_a, actual_b) = if placed[i].score > placed[j].score {
+                (1.0, 0.0)
+            } else if placed[i].score < placed[j].score {
+                (0.0, 1.0)
+            } else {
+                (0.5, 0.5)
+            };
+            let delta_a = k * (actual_a - expected_a);
+            *deltas.entry(a).or_insert(0.0) += delta_a;
+            *deltas.entry(b).or_insert(0.0) += -delta_a + k * (actual_b - (1.0 - expected_a));
+        }
+    }
+    // Average per-opponent deltas so K applies once total.
+    let opponents = (placed.len() - 1) as f64;
+    for (idx, p) in placed.iter().enumerate() {
+        let raw_delta = *deltas.get(&p.bot).unwrap_or(&0.0);
+        let scaled = raw_delta / opponents;
+        let new_rating = ((*ratings.get(&p.bot).unwrap() + scaled).round() as i32).max(0);
+        let existing = get_or_init_stats(ctx, p.bot);
+        let was_win = idx == 0;
+        let stats = BotStats {
+            rating: new_rating,
+            matches_played: existing.matches_played + 1,
+            wins: existing.wins + if was_win { 1 } else { 0 },
+            total_score: existing.total_score + p.score,
+            last_played: Some(ctx.timestamp),
+            ..existing
+        };
+        if ctx.db.bot_stats().bot().find(p.bot).is_some() {
+            ctx.db.bot_stats().bot().update(stats);
+        } else {
+            ctx.db.bot_stats().insert(stats);
+        }
+    }
+}
+
 // ---------- Auction tick (scheduled) ----------
 
 #[reducer]
@@ -588,6 +1175,7 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
                 ..m2
             });
             log::info!("Match {} ended (bag empty)", match_id);
+            on_match_ended(ctx, match_id);
             return;
         }
     };
