@@ -13,9 +13,8 @@ export default function Leaderboard() {
   }
   stats.sort((a, b) => b.rating - a.rating);
 
-  // Bots without any stats yet (haven't played a match) at default 1000.
-  const seen = new Set(stats.map((s) => s.bot.toHexString()));
-  const unrated = bots.filter((b) => !seen.has(b.identity.toHexString()));
+  const seen = new Set(stats.map((s) => String(s.botId)));
+  const unrated = bots.filter((b) => !seen.has(String(b.id)));
 
   return (
     <>
@@ -38,11 +37,11 @@ export default function Leaderboard() {
           </thead>
           <tbody>
             {stats.map((s, i) => {
-              const bot = bots.find((b) => b.identity.isEqual(s.bot));
+              const bot = bots.find((b) => b.id === s.botId);
               return (
-                <tr key={s.bot.toHexString()}>
+                <tr key={String(s.botId)}>
                   <td>{i + 1}</td>
-                  <td>{bot?.name ?? s.bot.toHexString().slice(0, 8)}</td>
+                  <td>{bot?.name ?? `#${s.botId}`}</td>
                   <td className="num">{s.rating}</td>
                   <td className="num">{s.matchesPlayed}</td>
                   <td className="num">{s.wins}</td>
@@ -51,7 +50,7 @@ export default function Leaderboard() {
               );
             })}
             {unrated.map((b, i) => (
-              <tr key={b.identity.toHexString()}>
+              <tr key={String(b.id)}>
                 <td>{stats.length + i + 1}</td>
                 <td>{b.name}</td>
                 <td className="num secondary">1000</td>
@@ -64,7 +63,7 @@ export default function Leaderboard() {
         </table>
         {bots.length === 0 && (
           <div className="secondary" style={{ padding: 12 }}>
-            No bots registered yet. <Link to="/register">Register one →</Link>
+            No bots registered yet. <Link to="/team/new">Create a team →</Link>
           </div>
         )}
       </section>

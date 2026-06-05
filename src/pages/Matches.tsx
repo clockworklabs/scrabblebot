@@ -51,7 +51,7 @@ export default function Matches() {
                   <td>{m.bagTotal}</td>
                   <td>{participants.length}</td>
                   <td>
-                    {top ? `${botName(bots, top.bot)} (${String(top.score)})` : "—"}
+                    {top ? `${botName(bots, top.botId)} (${String(top.score)})` : "—"}
                   </td>
                 </tr>
               );

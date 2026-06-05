@@ -1,9 +1,16 @@
 // Wordsmith bot starter.
 //
-// Before running:
-//   1. `spacetime publish wordsmith --module-path ../spacetimedb`
-//   2. `npm run generate`  (creates ./src/module_bindings)
-//   3. Set BOT_NAME / STDB_DB / STDB_HOST via env if needed.
+// First run (claim a credential):
+//   1. From the website, your team mints a nonce. Or from CLI:
+//      `spacetime call wordsmith mint_credential_nonce`
+//      `spacetime sql 'SELECT code FROM my_nonces ORDER BY expires_at DESC'`
+//   2. Run the bot with the nonce:
+//      `BOT_NONCE=<code> npm start`
+//      The bot connects fresh, redeems the nonce, and persists its token
+//      to .token (so future runs don't need the nonce).
+//
+// Subsequent runs:
+//   `npm start`  -- uses the saved token.
 //
 // Edit ./src/strategy.ts to customise how your bot bids and plays words.
 
@@ -19,12 +26,13 @@ import { chooseWord, decideBid } from "./strategy.js";
 
 const HOST = process.env.STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = process.env.STDB_DB ?? "wordsmith-gf28z";
-const BOT_NAME = process.env.BOT_NAME ?? `bot-${Math.floor(Math.random() * 10000)}`;
+const BOT_NAME = process.env.BOT_NAME ?? "bot";
+const BOT_NONCE = process.env.BOT_NONCE; // only used on first run
 const TOKEN_PATH = path.join(process.cwd(), `.token-${BOT_NAME}`);
 
 function loadToken(): string | undefined {
   try {
-    return fs.readFileSync(TOKEN_PATH, "utf8");
+    return fs.readFileSync(TOKEN_PATH, "utf8").trim() || undefined;
   } catch {
     return undefined;
   }
@@ -51,11 +59,17 @@ const DICTIONARY: string[] = fs.existsSync(dictionaryPath)
 DICTIONARY.sort((a, b) => b.length - a.length); // longest first for greedy pick
 
 let myIdentity: Identity | null = null;
-const bidsByAuction = new Set<string>(); // remember which auctions we've bid on
+let myBotId: bigint | null = null;
+const bidsByAuction = new Set<string>();
 const lastWordAttemptByMatch = new Map<string, number>();
 const WORD_RETRY_MS = 500;
 
-// Pull this bot's rack scoped to a specific match.
+function resolveMyBotId(conn: DbConnection): bigint | null {
+  if (!myIdentity) return null;
+  const cred = conn.db.bot_credential.identity.find(myIdentity);
+  return cred ? cred.botId : null;
+}
+
 function rackForMatch(conn: DbConnection, matchId: bigint): Map<string, number> {
   const rack = new Map<string, number>();
   for (const h of conn.db.my_rack.iter()) {
@@ -65,25 +79,25 @@ function rackForMatch(conn: DbConnection, matchId: bigint): Map<string, number> 
   return rack;
 }
 
-// Find this bot's MatchParticipant entry for a given match.
 function participantForMatch(
   conn: DbConnection,
   matchId: bigint,
 ): { balance: number; score: number } | null {
-  if (!myIdentity) return null;
+  if (myBotId === null) return null;
   for (const p of conn.db.match_participant.iter()) {
     if (p.matchId !== matchId) continue;
-    if (!p.bot.isEqual(myIdentity)) continue;
+    if (p.botId !== myBotId) continue;
     return { balance: Number(p.balance), score: Number(p.score) };
   }
   return null;
 }
 
 function tryBid(conn: DbConnection, auctionId: bigint, matchId: bigint, letter: string) {
+  if (myBotId === null) return;
   const key = `${matchId}:${auctionId}`;
   if (bidsByAuction.has(key)) return;
   const participant = participantForMatch(conn, matchId);
-  if (!participant) return; // not in this match
+  if (!participant) return;
   const amount = decideBid({
     letter,
     myBalance: participant.balance,
@@ -92,15 +106,16 @@ function tryBid(conn: DbConnection, auctionId: bigint, matchId: bigint, letter: 
   if (amount <= 0) return;
   conn.reducers.submitBid({ auctionId, amount: BigInt(amount) });
   bidsByAuction.add(key);
-  console.log(`[${BOT_NAME}] bid ${amount} on '${letter}' (match ${matchId}, auction ${auctionId})`);
+  console.log(
+    `[${BOT_NAME}] bid ${amount} on '${letter}' (match ${matchId}, auction ${auctionId})`,
+  );
 }
 
-// Try a word play in every match this bot is participating in.
 function tryPlayWord(conn: DbConnection) {
-  if (!myIdentity) return;
+  if (myBotId === null) return;
   const matches = new Set<bigint>();
   for (const p of conn.db.match_participant.iter()) {
-    if (p.bot.isEqual(myIdentity)) matches.add(p.matchId);
+    if (p.botId === myBotId) matches.add(p.matchId);
   }
   const now = Date.now();
   for (const matchId of matches) {
@@ -126,16 +141,40 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
     .subscriptionBuilder()
     .onApplied(() => {
       console.log(`[${BOT_NAME}] subscription applied`);
-      const existing = conn.db.bot.identity.find(identity);
-      if (!existing) {
-        console.log(`[${BOT_NAME}] registering as '${BOT_NAME}'`);
-        conn.reducers.registerBot({ name: BOT_NAME });
+
+      // Resolve our bot id, possibly after claiming a nonce.
+      myBotId = resolveMyBotId(conn);
+      if (myBotId === null) {
+        if (BOT_NONCE) {
+          console.log(`[${BOT_NAME}] claiming credential with nonce…`);
+          conn.reducers.claimCredential({ code: BOT_NONCE });
+          // Wait briefly for the credential to land; check again.
+          setTimeout(() => {
+            myBotId = resolveMyBotId(conn);
+            if (myBotId === null) {
+              console.error(
+                `[${BOT_NAME}] couldn't claim credential. Bad / expired nonce?`,
+              );
+              process.exit(1);
+            }
+            const bot = conn.db.bot.id.find(myBotId);
+            console.log(
+              `[${BOT_NAME}] claimed credential for bot '${bot?.name ?? "?"}' (id ${myBotId})`,
+            );
+            bootstrapActivity(conn);
+          }, 1000);
+          return;
+        } else {
+          console.error(
+            `[${BOT_NAME}] no BotCredential for this token. Set BOT_NONCE and re-run.`,
+          );
+          process.exit(1);
+        }
       }
-      // Bid on any open auctions we're a participant in.
-      for (const a of conn.db.auction.iter()) {
-        if (a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter);
-      }
-      tryPlayWord(conn);
+
+      const bot = conn.db.bot.id.find(myBotId);
+      console.log(`[${BOT_NAME}] acting as bot '${bot?.name ?? "?"}' (id ${myBotId})`);
+      bootstrapActivity(conn);
     })
     .subscribeToAllTables();
 
@@ -144,13 +183,26 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   });
   conn.db.my_rack.onInsert(() => tryPlayWord(conn));
   conn.db.my_rack.onUpdate(() => tryPlayWord(conn));
-
+  conn.db.bot_credential.onInsert(() => {
+    if (myBotId === null) myBotId = resolveMyBotId(conn);
+  });
   conn.db.auction_result.onInsert((_ctx, r) => {
-    const winner = r.winner ? r.winner.toHexString().slice(0, 8) : "no-bid";
+    if (myBotId === null) return;
+    const winner =
+      r.winnerBotId !== undefined && r.winnerBotId !== null
+        ? String(r.winnerBotId)
+        : "no-bid";
     console.log(
-      `[${BOT_NAME}] match ${r.matchId} auction ${r.auctionId} '${r.letter}' → ${winner} (bid ${r.topBid}, paid ${r.paid})`,
+      `[${BOT_NAME}] match ${r.matchId} auction ${r.auctionId} '${r.letter}' → bot ${winner} (bid ${r.topBid}, paid ${r.paid})`,
     );
   });
+}
+
+function bootstrapActivity(conn: DbConnection) {
+  for (const a of conn.db.auction.iter()) {
+    if (a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter);
+  }
+  tryPlayWord(conn);
 }
 
 function main() {

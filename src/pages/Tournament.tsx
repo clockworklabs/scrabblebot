@@ -56,13 +56,9 @@ export default function Tournament() {
     grouped.get(key)!.push(m);
   }
 
-  function nameOf(bot: { isEqual: (other: TournamentEntry["bot"]) => boolean }): string {
-    for (const b of bots) {
-      if (b.identity.toHexString() === (bot as TournamentEntry["bot"]).toHexString()) {
-        return b.name;
-      }
-    }
-    return "?";
+  function nameOf(botId: bigint): string {
+    const b = bots.find((x) => x.id === botId);
+    return b?.name ?? `#${botId}`;
   }
 
   return (
@@ -89,7 +85,7 @@ export default function Tournament() {
             {entries.map((e, i) => (
               <tr key={String(e.id)}>
                 <td>{i + 1}</td>
-                <td>{nameOf(e.bot)}</td>
+                <td>{nameOf(e.botId)}</td>
                 <td className="num">{e.swissPoints}</td>
                 <td>{e.eliminated ? "eliminated" : "in"}</td>
               </tr>
@@ -125,7 +121,7 @@ export default function Tournament() {
                     <div style={{ textAlign: "right", fontSize: 13 }}>
                       {participants.slice(0, 3).map((p) => (
                         <div key={String(p.id)}>
-                          {nameOf(p.bot)} · {String(p.score)}
+                          {nameOf(p.botId)} · {String(p.score)}
                         </div>
                       ))}
                     </div>

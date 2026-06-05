@@ -112,7 +112,11 @@ export default function MatchView() {
                 <tr key={String(r.auctionId)}>
                   <td>{String(r.auctionId)}</td>
                   <td>{r.letter}</td>
-                  <td>{r.winner ? botName(bots, r.winner) : "no bid"}</td>
+                  <td>
+                    {r.winnerBotId !== undefined && r.winnerBotId !== null
+                      ? botName(bots, r.winnerBotId)
+                      : "no bid"}
+                  </td>
                   <td className="num">{String(r.topBid)}</td>
                   <td className="num">{String(r.paid)}</td>
                 </tr>
@@ -124,15 +128,12 @@ export default function MatchView() {
       <section className="panel full">
         <h2>Leaderboard</h2>
         {participants.map((p) => {
-          const tiles = rackTiles(racks, p.bot);
-          const bot = bots.find((b) => b.identity.isEqual(p.bot));
+          const tiles = rackTiles(racks, p.botId);
+          const bot = bots.find((b) => b.id === p.botId);
           return (
             <div key={String(p.id)} className="row">
               <div>
-                <div className="name">
-                  {bot?.name ?? "?"}{" "}
-                  {bot?.connected ? "" : <span className="secondary">(offline)</span>}
-                </div>
+                <div className="name">{bot?.name ?? "?"}</div>
                 <div className="rack">
                   {tiles.map((t, i) => (
                     <span key={i} className="tile">
@@ -172,7 +173,7 @@ export default function MatchView() {
               .reverse()
               .map((p) => (
                 <tr key={String(p.id)}>
-                  <td>{botName(bots, p.bot)}</td>
+                  <td>{botName(bots, p.botId)}</td>
                   <td>{p.word}</td>
                   <td className="num">{String(p.baseScore)}</td>
                   <td className="num">{String(p.bonus)}</td>

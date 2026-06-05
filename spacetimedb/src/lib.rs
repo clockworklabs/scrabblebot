@@ -11,8 +11,9 @@ use spacetimedb::{
 
 const STARTING_BALANCE: i64 = 100;
 const AUCTION_DURATION_MS: u64 = 1000;
-// Reserve price for a Vickrey auction with a single bidder.
 const AUCTION_RESERVE: i64 = 1;
+// One hour. Long enough to copy a nonce into a bot config without hurry.
+const NONCE_TTL_SECONDS: u64 = 60 * 60;
 
 // ---------- Enums ----------
 
@@ -65,39 +66,132 @@ pub enum TeamRole {
     Member,
 }
 
-// Returned by the my_team view — the public view of the caller's team.
-// bot_token is None for non-Owners.
+// View return type — the caller's team summary.
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct MyTeam {
-    pub id: u64,
-    pub name: String,
+    pub team_id: u64,
+    pub team_name: String,
+    pub bot_id: u64,
     pub bot_name: String,
-    pub bot_identity: Identity,
     pub role: TeamRole,
-    pub bot_token: Option<String>,
+    pub credential_count: u32,
 }
 
 // ---------- Tables ----------
 
-// Bot — global registration. No per-match state lives here anymore.
-#[table(accessor = bot, public)]
+// Bot is a persona, independent of any identity that controls it. Many
+// `BotCredential` rows may exist for the same bot; each one is a token a
+// human team member can give to a bot process so it can play the game.
+#[table(
+    accessor = bot,
+    public,
+    index(accessor = bot_by_team, btree(columns = [team_id]))
+)]
+#[derive(Clone)]
 pub struct Bot {
     #[primary_key]
-    pub identity: Identity,
+    #[auto_inc]
+    pub id: u64,
     #[unique]
     pub name: String,
-    pub connected: bool,
-    pub registered_at: Timestamp,
+    // 0 for simulated bots and other system-owned personas (no team).
+    pub team_id: u64,
     pub is_simulated: bool,
     pub strategy: BotStrategy,
+    pub created_at: Timestamp,
 }
 
-// Match — one row per match. Replaces the old singleton MatchState.
+// One row per credential authorized to act as a bot. Multiple credentials
+// per bot are allowed (the team adds new ones over time; old ones keep
+// working).
+#[table(
+    accessor = bot_credential,
+    public,
+    index(accessor = cred_by_bot, btree(columns = [bot_id]))
+)]
+#[derive(Clone)]
+pub struct BotCredential {
+    #[primary_key]
+    pub identity: Identity,
+    pub bot_id: u64,
+    pub connected: bool,
+    pub last_seen: Timestamp,
+}
+
+// Links a website's anonymous identity to a developer's spacetimedb.com
+// identity. Written by the `connect_id` reducer (called from CLI authed as
+// the spacetime.com user). One human can link many web identities; each web
+// identity links to exactly one human.
+#[table(
+    accessor = human_link,
+    public,
+    index(accessor = link_by_human, btree(columns = [human_identity]))
+)]
+#[derive(Clone)]
+pub struct HumanLink {
+    #[primary_key]
+    pub web_identity: Identity,
+    pub human_identity: Identity,
+    pub linked_at: Timestamp,
+}
+
+// Single-use credential claim code, minted by a team member. Private (not
+// subscribable) — the creator reads their own via the `my_nonces` view.
+#[table(
+    accessor = credential_nonce,
+    index(accessor = nonce_by_code, btree(columns = [code])),
+    index(accessor = nonce_by_creator, btree(columns = [creator]))
+)]
+#[derive(Clone)]
+pub struct CredentialNonce {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[unique]
+    pub code: String,
+    pub bot_id: u64,
+    // The human (resolved spacetime.com identity) who minted this nonce.
+    pub creator: Identity,
+    pub expires_at: Timestamp,
+}
+
+// Team — group of humans, owns exactly one Bot (Bot.team_id points back).
+#[table(accessor = team, public)]
+#[derive(Clone)]
+pub struct Team {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[unique]
+    pub name: String,
+    pub created_at: Timestamp,
+}
+
+#[table(
+    accessor = team_member,
+    public,
+    index(accessor = tmember_by_team, btree(columns = [team_id]))
+)]
+#[derive(Clone)]
+pub struct TeamMember {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub team_id: u64,
+    // Spacetime.com identity (the human).
+    #[unique]
+    pub user: Identity,
+    pub role: TeamRole,
+    pub joined_at: Timestamp,
+}
+
+// Match — one row per match. id is auto_inc.
 #[table(
     accessor = match_state,
     public,
     index(accessor = match_by_status, btree(columns = [status]))
 )]
+#[derive(Clone)]
 pub struct Match {
     #[primary_key]
     #[auto_inc]
@@ -117,14 +211,15 @@ pub struct Match {
     accessor = match_participant,
     public,
     index(accessor = mp_by_match, btree(columns = [match_id])),
-    index(accessor = mp_by_bot, btree(columns = [bot]))
+    index(accessor = mp_by_bot, btree(columns = [bot_id]))
 )]
+#[derive(Clone)]
 pub struct MatchParticipant {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     pub match_id: u64,
-    pub bot: Identity,
+    pub bot_id: u64,
     pub balance: i64,
     pub score: i64,
 }
@@ -134,6 +229,7 @@ pub struct MatchParticipant {
     accessor = bag_letter,
     index(accessor = bag_by_match, btree(columns = [match_id]))
 )]
+#[derive(Clone)]
 pub struct BagLetter {
     #[primary_key]
     #[auto_inc]
@@ -143,18 +239,19 @@ pub struct BagLetter {
     pub remaining: u32,
 }
 
-// Private — each bot sees only their own rack via `my_rack`.
+// Private — each bot sees only its own rack via `my_rack`.
 #[table(
     accessor = holding,
-    index(accessor = holding_by_bot, btree(columns = [bot])),
+    index(accessor = holding_by_bot, btree(columns = [bot_id])),
     index(accessor = holding_by_match, btree(columns = [match_id]))
 )]
+#[derive(Clone)]
 pub struct Holding {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     pub match_id: u64,
-    pub bot: Identity,
+    pub bot_id: u64,
     pub letter: String,
     pub count: u32,
 }
@@ -165,6 +262,7 @@ pub struct Holding {
     index(accessor = auction_by_match, btree(columns = [match_id])),
     index(accessor = auction_by_status, btree(columns = [status]))
 )]
+#[derive(Clone)]
 pub struct Auction {
     #[primary_key]
     #[auto_inc]
@@ -181,12 +279,13 @@ pub struct Auction {
     accessor = pending_bid,
     index(accessor = bid_by_auction, btree(columns = [auction_id]))
 )]
+#[derive(Clone)]
 pub struct PendingBid {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     pub auction_id: u64,
-    pub bidder: Identity,
+    pub bidder_bot_id: u64,
     pub amount: i64,
     pub submitted_at: Timestamp,
 }
@@ -196,12 +295,13 @@ pub struct PendingBid {
     public,
     index(accessor = result_by_match, btree(columns = [match_id]))
 )]
+#[derive(Clone)]
 pub struct AuctionResult {
     #[primary_key]
     pub auction_id: u64,
     pub match_id: u64,
     pub letter: String,
-    pub winner: Option<Identity>,
+    pub winner_bot_id: Option<u64>,
     pub top_bid: i64,
     pub paid: i64,
     pub closed_at: Timestamp,
@@ -211,14 +311,15 @@ pub struct AuctionResult {
     accessor = word_play,
     public,
     index(accessor = play_by_match, btree(columns = [match_id])),
-    index(accessor = play_by_bot, btree(columns = [bot]))
+    index(accessor = play_by_bot, btree(columns = [bot_id]))
 )]
+#[derive(Clone)]
 pub struct WordPlay {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
     pub match_id: u64,
-    pub bot: Identity,
+    pub bot_id: u64,
     pub word: String,
     pub base_score: i64,
     pub bonus: i64,
@@ -227,6 +328,7 @@ pub struct WordPlay {
 }
 
 #[table(accessor = auction_schedule, scheduled(auction_tick))]
+#[derive(Clone)]
 pub struct AuctionSchedule {
     #[primary_key]
     #[auto_inc]
@@ -240,16 +342,16 @@ pub struct AuctionSchedule {
 #[derive(Clone)]
 pub struct BotStats {
     #[primary_key]
-    pub bot: Identity,
+    pub bot_id: u64,
     pub rating: i32, // ELO; new bots start at 1000
     pub matches_played: u32,
-    pub wins: u32, // first-place finishes
+    pub wins: u32,
     pub total_score: i64,
     pub last_played: Option<Timestamp>,
 }
 
-// Singleton-ish config row (id always 0) controlling the continuous matchmaker.
 #[table(accessor = matchmaker_config, public)]
+#[derive(Clone)]
 pub struct MatchmakerConfig {
     #[primary_key]
     pub id: u32,
@@ -261,6 +363,7 @@ pub struct MatchmakerConfig {
 }
 
 #[table(accessor = matchmaker_schedule, scheduled(matchmaker_tick))]
+#[derive(Clone)]
 pub struct MatchmakerSchedule {
     #[primary_key]
     #[auto_inc]
@@ -284,12 +387,11 @@ pub struct Tournament {
     pub ended_at: Option<Timestamp>,
 }
 
-// One row per bot competing in a tournament.
 #[table(
     accessor = tournament_entry,
     public,
     index(accessor = te_by_tournament, btree(columns = [tournament_id])),
-    index(accessor = te_by_bot, btree(columns = [bot]))
+    index(accessor = te_by_bot, btree(columns = [bot_id]))
 )]
 #[derive(Clone)]
 pub struct TournamentEntry {
@@ -297,54 +399,18 @@ pub struct TournamentEntry {
     #[auto_inc]
     pub id: u64,
     pub tournament_id: u64,
-    pub bot: Identity,
+    pub bot_id: u64,
     pub swiss_points: i32,
     pub eliminated: bool,
 }
 
-// Private — bot_token lives here and shouldn't be subscribable. Use the
-// `my_team` view for what callers can see.
-#[table(accessor = team)]
-#[derive(Clone)]
-pub struct Team {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    #[unique]
-    pub name: String,
-    pub bot_name: String,
-    #[unique]
-    pub bot_identity: Identity,
-    pub bot_token: String,
-    pub created_at: Timestamp,
-}
-
-// Public — rosters can be displayed. One user can belong to at most one team
-// (enforced via #[unique] on `user`).
-#[table(
-    accessor = team_member,
-    public,
-    index(accessor = tmember_by_team, btree(columns = [team_id]))
-)]
-#[derive(Clone)]
-pub struct TeamMember {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub team_id: u64,
-    #[unique]
-    pub user: Identity,
-    pub role: TeamRole,
-    pub joined_at: Timestamp,
-}
-
-// Links a Match to a tournament round.
 #[table(
     accessor = tournament_match,
     public,
     index(accessor = tm_by_tournament, btree(columns = [tournament_id])),
     index(accessor = tm_by_match, btree(columns = [match_id]))
 )]
+#[derive(Clone)]
 pub struct TournamentMatch {
     #[primary_key]
     #[auto_inc]
@@ -361,84 +427,368 @@ pub struct TournamentMatch {
 // filter by match_id on their side.
 #[view(accessor = my_rack, public)]
 fn my_rack(ctx: &ViewContext) -> Vec<Holding> {
+    let Some(cred) = ctx.db.bot_credential().identity().find(ctx.sender()) else {
+        return vec![];
+    };
     ctx.db
         .holding()
         .holding_by_bot()
-        .filter(ctx.sender())
+        .filter(cred.bot_id)
         .collect()
 }
 
-// The caller's team, with bot_token if they're the team Owner.
+// my_team: the calling human's team. Resolves browser identities via
+// HumanLink to the underlying spacetimedb.com identity.
 #[view(accessor = my_team, public)]
 fn my_team(ctx: &ViewContext) -> Option<MyTeam> {
-    let member = ctx.db.team_member().user().find(ctx.sender())?;
+    let human = resolve_human_view(ctx);
+    let member = ctx.db.team_member().user().find(human)?;
     let team = ctx.db.team().id().find(member.team_id)?;
-    let bot_token = match member.role {
-        TeamRole::Owner => Some(team.bot_token.clone()),
-        TeamRole::Member => None,
-    };
+    let bot = ctx.db.bot().bot_by_team().filter(team.id).next()?;
+    let credential_count = ctx
+        .db
+        .bot_credential()
+        .cred_by_bot()
+        .filter(bot.id)
+        .count() as u32;
     Some(MyTeam {
-        id: team.id,
-        name: team.name,
-        bot_name: team.bot_name,
-        bot_identity: team.bot_identity,
+        team_id: team.id,
+        team_name: team.name,
+        bot_id: bot.id,
+        bot_name: bot.name,
         role: member.role,
-        bot_token,
+        credential_count,
     })
+}
+
+// Nonces the caller has minted. Private to the caller.
+#[view(accessor = my_nonces, public)]
+fn my_nonces(ctx: &ViewContext) -> Vec<CredentialNonce> {
+    let human = resolve_human_view(ctx);
+    ctx.db
+        .credential_nonce()
+        .nonce_by_creator()
+        .filter(human)
+        .collect()
+}
+
+fn resolve_human_view(ctx: &ViewContext) -> Identity {
+    if let Some(link) = ctx.db.human_link().web_identity().find(ctx.sender()) {
+        link.human_identity
+    } else {
+        ctx.sender()
+    }
+}
+
+fn resolve_human(ctx: &ReducerContext) -> Identity {
+    if let Some(link) = ctx.db.human_link().web_identity().find(ctx.sender()) {
+        link.human_identity
+    } else {
+        ctx.sender()
+    }
+}
+
+fn caller_bot_id(ctx: &ReducerContext) -> Option<u64> {
+    ctx.db
+        .bot_credential()
+        .identity()
+        .find(ctx.sender())
+        .map(|c| c.bot_id)
 }
 
 // ---------- Lifecycle ----------
 
 #[reducer(init)]
-pub fn init(_ctx: &ReducerContext) {
-    // Nothing global to bootstrap — matches and bags are per-match now.
-}
+pub fn init(_ctx: &ReducerContext) {}
 
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    if let Some(bot) = ctx.db.bot().identity().find(ctx.sender()) {
-        ctx.db.bot().identity().update(Bot {
+    if let Some(cred) = ctx.db.bot_credential().identity().find(ctx.sender()) {
+        ctx.db.bot_credential().identity().update(BotCredential {
             connected: true,
-            ..bot
+            last_seen: ctx.timestamp,
+            ..cred
         });
     }
 }
 
 #[reducer(client_disconnected)]
 pub fn client_disconnected(ctx: &ReducerContext) {
-    if let Some(bot) = ctx.db.bot().identity().find(ctx.sender()) {
-        ctx.db.bot().identity().update(Bot {
+    if let Some(cred) = ctx.db.bot_credential().identity().find(ctx.sender()) {
+        ctx.db.bot_credential().identity().update(BotCredential {
             connected: false,
-            ..bot
+            last_seen: ctx.timestamp,
+            ..cred
         });
     }
 }
 
-// ---------- Bot management ----------
+// ---------- Identity linking ----------
 
+// CLI flow: spacetime call wordsmith connect_id <web_identity>
+// ctx.sender here is the human (spacetime.com identity). The argument is
+// the anon web identity the user wants to link.
 #[reducer]
-pub fn register_bot(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() || trimmed.len() > 32 {
-        return Err("Name must be 1-32 characters".into());
+pub fn connect_id(ctx: &ReducerContext, web_identity: Identity) -> Result<(), String> {
+    let human = ctx.sender();
+    if web_identity == human {
+        return Err("web identity is the same as your identity — nothing to link".into());
     }
-    if ctx.db.bot().identity().find(ctx.sender()).is_some() {
-        return Err("This identity is already registered".into());
+    if let Some(existing) = ctx.db.human_link().web_identity().find(web_identity) {
+        if existing.human_identity == human {
+            return Ok(()); // idempotent
+        }
+        return Err(
+            "That web identity is already linked to a different account. \
+             Reset the browser identity first and try again."
+                .into(),
+        );
     }
-    if ctx.db.bot().name().find(trimmed.to_string()).is_some() {
-        return Err("Name already taken".into());
-    }
-    ctx.db.bot().insert(Bot {
-        identity: ctx.sender(),
-        name: trimmed.to_string(),
-        connected: true,
-        registered_at: ctx.timestamp,
-        is_simulated: false,
-        strategy: BotStrategy::Human,
+    ctx.db.human_link().insert(HumanLink {
+        web_identity,
+        human_identity: human,
+        linked_at: ctx.timestamp,
     });
-    log::info!("Bot registered: {}", trimmed);
+    log::info!("Linked web identity to human {}", human.to_hex());
     Ok(())
 }
+
+// ---------- Teams ----------
+
+// Create a team with the caller as Owner, plus the team's bot row. The bot
+// gets no credentials yet — the team must mint a credential nonce next.
+#[reducer]
+pub fn create_team(
+    ctx: &ReducerContext,
+    team_name: String,
+    bot_name: String,
+) -> Result<(), String> {
+    let team_name = team_name.trim().to_string();
+    let bot_name = bot_name.trim().to_string();
+    if team_name.is_empty() || team_name.len() > 48 {
+        return Err("Team name must be 1-48 characters".into());
+    }
+    if bot_name.is_empty() || bot_name.len() > 32 {
+        return Err("Bot name must be 1-32 characters".into());
+    }
+    let human = resolve_human(ctx);
+    if ctx.db.team().name().find(team_name.clone()).is_some() {
+        return Err("Team name already taken".into());
+    }
+    if ctx.db.team_member().user().find(human).is_some() {
+        return Err("You're already on a team".into());
+    }
+    if ctx.db.bot().name().find(bot_name.clone()).is_some() {
+        return Err("Bot name already taken".into());
+    }
+
+    let team = ctx.db.team().insert(Team {
+        id: 0,
+        name: team_name.clone(),
+        created_at: ctx.timestamp,
+    });
+    let bot = ctx.db.bot().insert(Bot {
+        id: 0,
+        name: bot_name.clone(),
+        team_id: team.id,
+        is_simulated: false,
+        strategy: BotStrategy::Human,
+        created_at: ctx.timestamp,
+    });
+    ctx.db.team_member().insert(TeamMember {
+        id: 0,
+        team_id: team.id,
+        user: human,
+        role: TeamRole::Owner,
+        joined_at: ctx.timestamp,
+    });
+    log::info!(
+        "Team '{}' (id {}) created with bot '{}' (id {})",
+        team_name,
+        team.id,
+        bot_name,
+        bot.id
+    );
+    Ok(())
+}
+
+#[reducer]
+pub fn join_team(ctx: &ReducerContext, team_name: String) -> Result<(), String> {
+    let team_name = team_name.trim().to_string();
+    let team = ctx.db.team().name().find(team_name.clone()).ok_or("No such team")?;
+    let human = resolve_human(ctx);
+    if ctx.db.team_member().user().find(human).is_some() {
+        return Err("You're already on a team".into());
+    }
+    ctx.db.team_member().insert(TeamMember {
+        id: 0,
+        team_id: team.id,
+        user: human,
+        role: TeamRole::Member,
+        joined_at: ctx.timestamp,
+    });
+    log::info!("Human {} joined team '{}'", human.to_hex(), team_name);
+    Ok(())
+}
+
+#[reducer]
+pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
+    let human = resolve_human(ctx);
+    let me = ctx
+        .db
+        .team_member()
+        .user()
+        .find(human)
+        .ok_or("You're not on a team")?;
+    let team_id = me.team_id;
+    ctx.db.team_member().id().delete(me.id);
+    let remaining = ctx
+        .db
+        .team_member()
+        .tmember_by_team()
+        .filter(team_id)
+        .count();
+    if remaining == 0 {
+        // Delete the team's bot too (along with any stats/credentials).
+        let bot_ids: Vec<u64> = ctx
+            .db
+            .bot()
+            .iter()
+            .filter(|b| b.team_id == team_id)
+            .map(|b| b.id)
+            .collect();
+        for bid in bot_ids {
+            let cred_ids: Vec<Identity> = ctx
+                .db
+                .bot_credential()
+                .cred_by_bot()
+                .filter(bid)
+                .map(|c| c.identity)
+                .collect();
+            for cid in cred_ids {
+                ctx.db.bot_credential().identity().delete(cid);
+            }
+            ctx.db.bot().id().delete(bid);
+        }
+        ctx.db.team().id().delete(team_id);
+        log::info!("Team {} dissolved (no members left)", team_id);
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn promote_to_owner(
+    ctx: &ReducerContext,
+    target_user: Identity,
+) -> Result<(), String> {
+    let human = resolve_human(ctx);
+    let me = ctx
+        .db
+        .team_member()
+        .user()
+        .find(human)
+        .ok_or("You're not on a team")?;
+    if me.role != TeamRole::Owner {
+        return Err("Only owners can promote".into());
+    }
+    let target = ctx
+        .db
+        .team_member()
+        .user()
+        .find(target_user)
+        .ok_or("Target user is not on a team")?;
+    if target.team_id != me.team_id {
+        return Err("Target user is not on your team".into());
+    }
+    ctx.db.team_member().id().update(TeamMember {
+        role: TeamRole::Owner,
+        ..target
+    });
+    Ok(())
+}
+
+// ---------- Credential provisioning ----------
+
+// A team member mints a single-use nonce that can be redeemed by any client
+// to receive a fresh credential for their team's bot.
+#[reducer]
+pub fn mint_credential_nonce(ctx: &ReducerContext) -> Result<(), String> {
+    let human = resolve_human(ctx);
+    let member = ctx
+        .db
+        .team_member()
+        .user()
+        .find(human)
+        .ok_or("You're not on a team — create or join one first")?;
+    let bot = ctx
+        .db
+        .bot()
+        .iter()
+        .find(|b| b.team_id == member.team_id)
+        .ok_or("Your team has no bot")?;
+    let code = generate_nonce_code(ctx);
+    let expires_at = ctx.timestamp + Duration::from_secs(NONCE_TTL_SECONDS);
+    ctx.db.credential_nonce().insert(CredentialNonce {
+        id: 0,
+        code: code.clone(),
+        bot_id: bot.id,
+        creator: human,
+        expires_at,
+    });
+    log::info!(
+        "Nonce minted for bot {} (expires in {}s)",
+        bot.id,
+        NONCE_TTL_SECONDS
+    );
+    Ok(())
+}
+
+// A freshly-connected client (no token yet, OR a token unrelated to a bot)
+// redeems a nonce. The client's identity becomes a new credential for the
+// nonce's bot. The nonce is then deleted.
+#[reducer]
+pub fn claim_credential(ctx: &ReducerContext, code: String) -> Result<(), String> {
+    let nonce = ctx
+        .db
+        .credential_nonce()
+        .code()
+        .find(code.clone())
+        .ok_or("No such nonce")?;
+    if ctx.timestamp >= nonce.expires_at {
+        // Clean it up.
+        ctx.db.credential_nonce().id().delete(nonce.id);
+        return Err("This nonce has expired".into());
+    }
+    // Is the caller already a credential for ANY bot? Disallow — a fresh
+    // client (no prior credential) must claim.
+    if ctx.db.bot_credential().identity().find(ctx.sender()).is_some() {
+        return Err("Your identity is already a credential for a bot".into());
+    }
+    ctx.db.bot_credential().insert(BotCredential {
+        identity: ctx.sender(),
+        bot_id: nonce.bot_id,
+        connected: true,
+        last_seen: ctx.timestamp,
+    });
+    ctx.db.credential_nonce().id().delete(nonce.id);
+    log::info!("Credential claimed for bot {}", nonce.bot_id);
+    Ok(())
+}
+
+fn generate_nonce_code(ctx: &ReducerContext) -> String {
+    // Random 12-character alphanumeric code. Deterministic in transaction
+    // via ctx.rng. ~57 bits of entropy — fine for a single-use code with
+    // short TTL.
+    const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut out = String::with_capacity(12);
+    for _ in 0..12 {
+        let i = ctx.rng().gen_range(0..CHARS.len());
+        out.push(CHARS[i] as char);
+    }
+    out
+}
+
+// ---------- Simulated bot ----------
 
 #[reducer]
 pub fn spawn_simulated_bot(
@@ -456,180 +806,43 @@ pub fn spawn_simulated_bot(
     if ctx.db.bot().name().find(trimmed.to_string()).is_some() {
         return Err("Name already taken".into());
     }
+    // Sim bots don't belong to a team and aren't player-owned. They get a
+    // fabricated credential identity so the auction/word path stays uniform.
     let identity = Identity::from_claims("sim", trimmed);
-    if ctx.db.bot().identity().find(identity).is_some() {
+    if ctx.db.bot_credential().identity().find(identity).is_some() {
         return Err("Simulated bot already exists".into());
     }
-    ctx.db.bot().insert(Bot {
-        identity,
+    let bot = ctx.db.bot().insert(Bot {
+        id: 0,
         name: trimmed.to_string(),
-        connected: true,
-        registered_at: ctx.timestamp,
+        team_id: 0,
         is_simulated: true,
         strategy,
-    });
-    log::info!("Simulated bot spawned: {}", trimmed);
-    Ok(())
-}
-
-// ---------- Teams ----------
-
-// Caller (signed in via OIDC) becomes Owner of a new team. The caller's
-// browser is expected to have minted a fresh bot identity + token via an
-// anonymous connection and passes both here together with the bot name.
-#[reducer]
-pub fn create_team(
-    ctx: &ReducerContext,
-    team_name: String,
-    bot_name: String,
-    bot_identity: Identity,
-    bot_token: String,
-) -> Result<(), String> {
-    let team_name = team_name.trim().to_string();
-    let bot_name = bot_name.trim().to_string();
-    if team_name.is_empty() || team_name.len() > 48 {
-        return Err("Team name must be 1-48 characters".into());
-    }
-    if bot_name.is_empty() || bot_name.len() > 32 {
-        return Err("Bot name must be 1-32 characters".into());
-    }
-    if bot_token.is_empty() {
-        return Err("bot_token is required".into());
-    }
-    if ctx.db.team().name().find(team_name.clone()).is_some() {
-        return Err("Team name already taken".into());
-    }
-    if ctx.db.team_member().user().find(ctx.sender()).is_some() {
-        return Err("You're already on a team".into());
-    }
-    // The bot identity should already be registered via `register_bot`.
-    let bot = ctx
-        .db
-        .bot()
-        .identity()
-        .find(bot_identity)
-        .ok_or("bot_identity is not registered — call register_bot first")?;
-    if bot.name != bot_name {
-        return Err(format!(
-            "Registered bot name '{}' doesn't match supplied '{}'",
-            bot.name, bot_name
-        ));
-    }
-    if ctx.db.team().bot_identity().find(bot_identity).is_some() {
-        return Err("That bot is already on a team".into());
-    }
-
-    let team = ctx.db.team().insert(Team {
-        id: 0,
-        name: team_name.clone(),
-        bot_name,
-        bot_identity,
-        bot_token,
         created_at: ctx.timestamp,
     });
-    ctx.db.team_member().insert(TeamMember {
-        id: 0,
-        team_id: team.id,
-        user: ctx.sender(),
-        role: TeamRole::Owner,
-        joined_at: ctx.timestamp,
+    ctx.db.bot_credential().insert(BotCredential {
+        identity,
+        bot_id: bot.id,
+        connected: true,
+        last_seen: ctx.timestamp,
     });
-    log::info!("Team '{}' created (id {})", team_name, team.id);
-    Ok(())
-}
-
-#[reducer]
-pub fn join_team(ctx: &ReducerContext, team_name: String) -> Result<(), String> {
-    let team_name = team_name.trim().to_string();
-    let team = ctx
-        .db
-        .team()
-        .name()
-        .find(team_name.clone())
-        .ok_or("No such team")?;
-    if ctx.db.team_member().user().find(ctx.sender()).is_some() {
-        return Err("You're already on a team".into());
-    }
-    ctx.db.team_member().insert(TeamMember {
-        id: 0,
-        team_id: team.id,
-        user: ctx.sender(),
-        role: TeamRole::Member,
-        joined_at: ctx.timestamp,
-    });
-    log::info!("User joined team '{}'", team_name);
-    Ok(())
-}
-
-#[reducer]
-pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
-    let me = ctx
-        .db
-        .team_member()
-        .user()
-        .find(ctx.sender())
-        .ok_or("You're not on a team")?;
-    let team_id = me.team_id;
-    ctx.db.team_member().id().delete(me.id);
-    // If no members remain, delete the team too.
-    let remaining = ctx
-        .db
-        .team_member()
-        .tmember_by_team()
-        .filter(team_id)
-        .count();
-    if remaining == 0 {
-        ctx.db.team().id().delete(team_id);
-        log::info!("Team {} deleted (no members)", team_id);
-    }
-    Ok(())
-}
-
-#[reducer]
-pub fn promote_to_owner(
-    ctx: &ReducerContext,
-    target_user: Identity,
-) -> Result<(), String> {
-    let me = ctx
-        .db
-        .team_member()
-        .user()
-        .find(ctx.sender())
-        .ok_or("You're not on a team")?;
-    if me.role != TeamRole::Owner {
-        return Err("Only Owners can promote".into());
-    }
-    let target = ctx
-        .db
-        .team_member()
-        .user()
-        .find(target_user)
-        .ok_or("Target user is not on any team")?;
-    if target.team_id != me.team_id {
-        return Err("Target user is on a different team".into());
-    }
-    ctx.db.team_member().id().update(TeamMember {
-        role: TeamRole::Owner,
-        ..target
-    });
+    log::info!("Simulated bot spawned: {} (id {})", trimmed, bot.id);
     Ok(())
 }
 
 // ---------- Match control ----------
 
-// Start a match with every currently-registered bot.
 #[reducer]
 pub fn start_match(ctx: &ReducerContext, auction_type: AuctionType) -> Result<(), String> {
-    let participants: Vec<Identity> = ctx.db.bot().iter().map(|b| b.identity).collect();
+    let participants: Vec<u64> = ctx.db.bot().iter().map(|b| b.id).collect();
     start_match_with(ctx, auction_type, participants)
 }
 
-// Start a match with a specific roster.
 #[reducer]
 pub fn start_match_for(
     ctx: &ReducerContext,
     auction_type: AuctionType,
-    participants: Vec<Identity>,
+    participants: Vec<u64>,
 ) -> Result<(), String> {
     start_match_with(ctx, auction_type, participants)
 }
@@ -637,7 +850,7 @@ pub fn start_match_for(
 fn start_match_with(
     ctx: &ReducerContext,
     auction_type: AuctionType,
-    participants: Vec<Identity>,
+    participants: Vec<u64>,
 ) -> Result<(), String> {
     if participants.is_empty() {
         return Err("Need at least one participant".into());
@@ -656,14 +869,14 @@ fn start_match_with(
     });
     let match_id = m.id;
 
-    for identity in &participants {
-        if ctx.db.bot().identity().find(*identity).is_none() {
-            return Err(format!("Unknown bot in roster: {}", identity.to_hex()));
+    for bot_id in &participants {
+        if ctx.db.bot().id().find(*bot_id).is_none() {
+            return Err(format!("Unknown bot in roster: {}", bot_id));
         }
         ctx.db.match_participant().insert(MatchParticipant {
             id: 0,
             match_id,
-            bot: *identity,
+            bot_id: *bot_id,
             balance: STARTING_BALANCE,
             score: 0,
         });
@@ -719,6 +932,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
     if amount < 0 {
         return Err("Bid must be non-negative".into());
     }
+    let bot_id = caller_bot_id(ctx).ok_or("Your identity is not a credential for any bot")?;
     let auction = ctx
         .db
         .auction()
@@ -732,7 +946,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
         return Err("Auction window expired".into());
     }
     let participant =
-        find_participant(ctx, auction.match_id, ctx.sender()).ok_or("Not in this match")?;
+        find_participant(ctx, auction.match_id, bot_id).ok_or("Not in this match")?;
     if participant.balance < amount {
         return Err("Insufficient balance".into());
     }
@@ -742,7 +956,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
         .pending_bid()
         .bid_by_auction()
         .filter(auction_id)
-        .filter(|b| b.bidder == ctx.sender())
+        .filter(|b| b.bidder_bot_id == bot_id)
         .map(|b| b.id)
         .collect();
     for id in existing {
@@ -752,7 +966,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
     ctx.db.pending_bid().insert(PendingBid {
         id: 0,
         auction_id,
-        bidder: ctx.sender(),
+        bidder_bot_id: bot_id,
         amount,
         submitted_at: ctx.timestamp,
     });
@@ -762,7 +976,11 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
 // ---------- Word play ----------
 
 #[reducer]
-pub fn submit_word(ctx: &ReducerContext, match_id: u64, word: String) -> Result<(), String> {
+pub fn submit_word(
+    ctx: &ReducerContext,
+    match_id: u64,
+    word: String,
+) -> Result<(), String> {
     let m = ctx
         .db
         .match_state()
@@ -772,8 +990,9 @@ pub fn submit_word(ctx: &ReducerContext, match_id: u64, word: String) -> Result<
     if m.status != MatchStatus::Running {
         return Err("Match not running".into());
     }
+    let bot_id = caller_bot_id(ctx).ok_or("Your identity is not a credential for any bot")?;
     let participant =
-        find_participant(ctx, match_id, ctx.sender()).ok_or("Not in this match")?;
+        find_participant(ctx, match_id, bot_id).ok_or("Not in this match")?;
 
     let word_upper = word.to_ascii_uppercase();
     if word_upper.len() < 2 {
@@ -851,7 +1070,6 @@ pub fn matchmaker_tick(ctx: &ReducerContext, _job: MatchmakerSchedule) {
         return;
     }
 
-    // Eligible bots: registered, not currently in a running match.
     let mut busy_bot_ids = std::collections::HashSet::new();
     let running_matches: Vec<u64> = ctx
         .db
@@ -862,29 +1080,27 @@ pub fn matchmaker_tick(ctx: &ReducerContext, _job: MatchmakerSchedule) {
         .collect();
     for mid in &running_matches {
         for p in ctx.db.match_participant().mp_by_match().filter(*mid) {
-            busy_bot_ids.insert(p.bot);
+            busy_bot_ids.insert(p.bot_id);
         }
     }
-    let mut available: Vec<Identity> = ctx
+    let mut available: Vec<u64> = ctx
         .db
         .bot()
         .iter()
-        .filter(|b| !busy_bot_ids.contains(&b.identity))
-        .map(|b| b.identity)
+        .filter(|b| !busy_bot_ids.contains(&b.id))
+        .map(|b| b.id)
         .collect();
 
     if available.len() >= cfg.match_size_min as usize {
         let take = (cfg.match_size_max as usize).min(available.len());
-        // Shuffle deterministically using ctx.rng.
         for i in (1..available.len()).rev() {
             let j = ctx.rng().gen_range(0..=i);
             available.swap(i, j);
         }
-        let roster: Vec<Identity> = available.into_iter().take(take).collect();
+        let roster: Vec<u64> = available.into_iter().take(take).collect();
         let _ = start_match_with(ctx, cfg.auction_type.clone(), roster);
     }
 
-    // Reschedule next tick.
     ctx.db.matchmaker_schedule().insert(MatchmakerSchedule {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Time(
@@ -912,8 +1128,7 @@ pub fn start_tournament(
     if top_cut < 2 {
         return Err("top_cut must be >= 2".into());
     }
-    // For simplicity, require an even number of bots that's >= match_size.
-    let bots: Vec<Identity> = ctx.db.bot().iter().map(|b| b.identity).collect();
+    let bots: Vec<u64> = ctx.db.bot().iter().map(|b| b.id).collect();
     if bots.len() < match_size as usize {
         return Err(format!(
             "Need at least {} registered bots to start",
@@ -931,11 +1146,11 @@ pub fn start_tournament(
         created_at: ctx.timestamp,
         ended_at: None,
     });
-    for bot in &bots {
+    for bot_id in &bots {
         ctx.db.tournament_entry().insert(TournamentEntry {
             id: 0,
             tournament_id: t.id,
-            bot: *bot,
+            bot_id: *bot_id,
             swiss_points: 0,
             eliminated: false,
         });
@@ -959,8 +1174,6 @@ fn start_swiss_round(
         current_round: round,
         ..t.clone()
     });
-    // Sort entries by current Swiss points (desc); round 1 is effectively
-    // random because everyone is tied at 0. Then pair adjacent groups.
     let mut entries: Vec<TournamentEntry> = ctx
         .db
         .tournament_entry()
@@ -969,7 +1182,6 @@ fn start_swiss_round(
         .filter(|e| !e.eliminated)
         .collect();
     if round == 1 {
-        // randomize once
         for i in (1..entries.len()).rev() {
             let j = ctx.rng().gen_range(0..=i);
             entries.swap(i, j);
@@ -990,10 +1202,9 @@ fn pair_into_matches(
     let match_size = t.match_size as usize;
     let mut i = 0;
     while i + match_size <= entries.len() {
-        let roster: Vec<Identity> = entries[i..i + match_size].iter().map(|e| e.bot).collect();
+        let roster: Vec<u64> = entries[i..i + match_size].iter().map(|e| e.bot_id).collect();
         let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
         start_match_with(ctx, t.auction_type.clone(), roster)?;
-        // The match just created has the highest id.
         let new_match_id = ctx
             .db
             .match_state()
@@ -1014,9 +1225,6 @@ fn pair_into_matches(
     Ok(())
 }
 
-// Called from auction_tick when a match ends. If that match was part of a
-// tournament, award Swiss points (or eliminate bracket losers) and, if the
-// round is now complete, start the next round (or end the tournament).
 fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
     update_elo_at_match_end(ctx, match_id);
 
@@ -1033,7 +1241,6 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
         return;
     };
 
-    // Sort participants by final score desc to determine placements.
     let participants: Vec<MatchParticipant> = ctx
         .db
         .match_participant()
@@ -1045,7 +1252,6 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
 
     match tm.phase {
         TournamentPhase::Swiss => {
-            // Award Swiss points: 1st = N, 2nd = N-1, ... last = 1.
             let n = placed.len() as i32;
             for (idx, p) in placed.iter().enumerate() {
                 let pts = n - idx as i32;
@@ -1054,7 +1260,7 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
                     .tournament_entry()
                     .te_by_tournament()
                     .filter(t.id)
-                    .find(|e| e.bot == p.bot);
+                    .find(|e| e.bot_id == p.bot_id);
                 if let Some(e) = entry {
                     ctx.db.tournament_entry().id().update(TournamentEntry {
                         swiss_points: e.swiss_points + pts,
@@ -1064,14 +1270,14 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
             }
         }
         TournamentPhase::Bracket => {
-            // Eliminate only the last-place bot in the match.
+            // Eliminate only the last-place bot.
             if let Some(last) = placed.last() {
                 let entry: Option<TournamentEntry> = ctx
                     .db
                     .tournament_entry()
                     .te_by_tournament()
                     .filter(t.id)
-                    .find(|e| e.bot == last.bot);
+                    .find(|e| e.bot_id == last.bot_id);
                 if let Some(e) = entry {
                     ctx.db.tournament_entry().id().update(TournamentEntry {
                         eliminated: true,
@@ -1081,15 +1287,11 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
             }
         }
         TournamentPhase::Final => {
-            // No elimination yet — finals are best-of-3 by aggregate score.
-            // We just record this game and decide after game 3.
+            // Finals are best-of-3, decided after all 3 games.
         }
     }
 
-    // Round-complete check: only relevant for Swiss + Bracket. Finals are
-    // handled inline below.
     if tm.phase == TournamentPhase::Final {
-        // Count how many Final games have ended so far.
         let final_games_done = ctx
             .db
             .tournament_match()
@@ -1106,31 +1308,28 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
             })
             .count();
         if final_games_done < 3 {
-            // Start the next final game.
             let _ = start_final_game(ctx, t.id, final_games_done as u32 + 1);
         } else {
-            // All three games done. Aggregate scores across them.
-            let finalists: Vec<Identity> = ctx
+            let finalists: Vec<u64> = ctx
                 .db
                 .tournament_entry()
                 .te_by_tournament()
                 .filter(t.id)
                 .filter(|e| !e.eliminated)
-                .map(|e| e.bot)
+                .map(|e| e.bot_id)
                 .collect();
-            let mut totals: Vec<(Identity, i64)> = finalists
+            let mut totals: Vec<(u64, i64)> = finalists
                 .iter()
                 .map(|b| (*b, aggregate_final_score(ctx, t.id, *b)))
                 .collect();
             totals.sort_by(|a, b| b.1.cmp(&a.1));
-            // Lowest aggregate is eliminated.
             if let Some((loser, _)) = totals.last() {
                 let entry: Option<TournamentEntry> = ctx
                     .db
                     .tournament_entry()
                     .te_by_tournament()
                     .filter(t.id)
-                    .find(|e| e.bot == *loser);
+                    .find(|e| e.bot_id == *loser);
                 if let Some(e) = entry {
                     ctx.db.tournament_entry().id().update(TournamentEntry {
                         eliminated: true,
@@ -1148,7 +1347,6 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
         return;
     }
 
-    // Swiss / Bracket: standard round-complete check then advance.
     let round_done = ctx
         .db
         .tournament_match()
@@ -1172,7 +1370,7 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
 fn aggregate_final_score(
     ctx: &ReducerContext,
     tournament_id: u64,
-    bot: Identity,
+    bot_id: u64,
 ) -> i64 {
     let mut total: i64 = 0;
     let final_matches: Vec<u64> = ctx
@@ -1189,7 +1387,7 @@ fn aggregate_final_score(
             .match_participant()
             .mp_by_match()
             .filter(mid)
-            .find(|p| p.bot == bot);
+            .find(|p| p.bot_id == bot_id);
         if let Some(p) = p {
             total += p.score;
         }
@@ -1206,7 +1404,6 @@ fn advance_tournament(ctx: &ReducerContext, tournament_id: u64) {
             if t.current_round < t.swiss_rounds_total {
                 let _ = start_swiss_round(ctx, t.id, t.current_round + 1);
             } else {
-                // Cut to top N, enter bracket phase.
                 let mut entries: Vec<TournamentEntry> = ctx
                     .db
                     .tournament_entry()
@@ -1246,7 +1443,6 @@ fn advance_tournament(ctx: &ReducerContext, tournament_id: u64) {
                     ..t
                 });
             } else if remaining == 2 {
-                // Transition to the best-of-3 final.
                 ctx.db.tournament().id().update(Tournament {
                     status: TournamentStatus::Final,
                     current_round: 0,
@@ -1261,8 +1457,6 @@ fn advance_tournament(ctx: &ReducerContext, tournament_id: u64) {
     }
 }
 
-// Spawn a single match containing every still-alive bot. The lowest-scoring
-// bot will be eliminated when this match ends.
 fn start_elimination_round(
     ctx: &ReducerContext,
     tournament_id: u64,
@@ -1273,13 +1467,13 @@ fn start_elimination_round(
         .id()
         .find(tournament_id)
         .ok_or("Unknown tournament")?;
-    let roster: Vec<Identity> = ctx
+    let roster: Vec<u64> = ctx
         .db
         .tournament_entry()
         .te_by_tournament()
         .filter(t.id)
         .filter(|e| !e.eliminated)
-        .map(|e| e.bot)
+        .map(|e| e.bot_id)
         .collect();
     if roster.len() < 2 {
         return Ok(());
@@ -1320,13 +1514,13 @@ fn start_final_game(
         .id()
         .find(tournament_id)
         .ok_or("Unknown tournament")?;
-    let roster: Vec<Identity> = ctx
+    let roster: Vec<u64> = ctx
         .db
         .tournament_entry()
         .te_by_tournament()
         .filter(t.id)
         .filter(|e| !e.eliminated)
-        .map(|e| e.bot)
+        .map(|e| e.bot_id)
         .collect();
     if roster.len() < 2 {
         return Ok(());
@@ -1354,9 +1548,9 @@ fn start_final_game(
 
 // ---------- ELO ----------
 
-fn get_or_init_stats(ctx: &ReducerContext, bot: Identity) -> BotStats {
-    ctx.db.bot_stats().bot().find(bot).unwrap_or(BotStats {
-        bot,
+fn get_or_init_stats(ctx: &ReducerContext, bot_id: u64) -> BotStats {
+    ctx.db.bot_stats().bot_id().find(bot_id).unwrap_or(BotStats {
+        bot_id,
         rating: 1000,
         matches_played: 0,
         wins: 0,
@@ -1378,20 +1572,18 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
     placed.sort_by(|a, b| b.score.cmp(&a.score));
 
     let k: f64 = 32.0;
-    // Build a mutable ratings map seeded from current stats.
-    let mut ratings: std::collections::HashMap<Identity, f64> =
+    let mut ratings: std::collections::HashMap<u64, f64> =
         std::collections::HashMap::new();
     for p in &placed {
-        let s = get_or_init_stats(ctx, p.bot);
-        ratings.insert(p.bot, s.rating as f64);
+        let s = get_or_init_stats(ctx, p.bot_id);
+        ratings.insert(p.bot_id, s.rating as f64);
     }
-    let mut deltas: std::collections::HashMap<Identity, f64> =
+    let mut deltas: std::collections::HashMap<u64, f64> =
         std::collections::HashMap::new();
     for i in 0..placed.len() {
         for j in (i + 1)..placed.len() {
-            // i ranks above j (higher score). If tied, treat as draw.
-            let a = placed[i].bot;
-            let b = placed[j].bot;
+            let a = placed[i].bot_id;
+            let b = placed[j].bot_id;
             let ra = *ratings.get(&a).unwrap();
             let rb = *ratings.get(&b).unwrap();
             let expected_a = 1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0));
@@ -1407,13 +1599,12 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
             *deltas.entry(b).or_insert(0.0) += -delta_a + k * (actual_b - (1.0 - expected_a));
         }
     }
-    // Average per-opponent deltas so K applies once total.
     let opponents = (placed.len() - 1) as f64;
     for (idx, p) in placed.iter().enumerate() {
-        let raw_delta = *deltas.get(&p.bot).unwrap_or(&0.0);
+        let raw_delta = *deltas.get(&p.bot_id).unwrap_or(&0.0);
         let scaled = raw_delta / opponents;
-        let new_rating = ((*ratings.get(&p.bot).unwrap() + scaled).round() as i32).max(0);
-        let existing = get_or_init_stats(ctx, p.bot);
+        let new_rating = ((*ratings.get(&p.bot_id).unwrap() + scaled).round() as i32).max(0);
+        let existing = get_or_init_stats(ctx, p.bot_id);
         let was_win = idx == 0;
         let stats = BotStats {
             rating: new_rating,
@@ -1423,8 +1614,8 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
             last_played: Some(ctx.timestamp),
             ..existing
         };
-        if ctx.db.bot_stats().bot().find(p.bot).is_some() {
-            ctx.db.bot_stats().bot().update(stats);
+        if ctx.db.bot_stats().bot_id().find(p.bot_id).is_some() {
+            ctx.db.bot_stats().bot_id().update(stats);
         } else {
             ctx.db.bot_stats().insert(stats);
         }
@@ -1458,24 +1649,28 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
 
     let (winner, top_bid, paid) = match (m.auction_type.clone(), sorted.as_slice()) {
         (_, []) => (None, 0, 0),
-        (AuctionType::FirstPrice, [only]) => (Some(only.bidder), only.amount, only.amount),
-        (AuctionType::FirstPrice, [first, ..]) => (Some(first.bidder), first.amount, first.amount),
+        (AuctionType::FirstPrice, [only]) => {
+            (Some(only.bidder_bot_id), only.amount, only.amount)
+        }
+        (AuctionType::FirstPrice, [first, ..]) => {
+            (Some(first.bidder_bot_id), first.amount, first.amount)
+        }
         (AuctionType::Vickrey, [only]) => {
-            (Some(only.bidder), only.amount, AUCTION_RESERVE.min(only.amount))
+            (Some(only.bidder_bot_id), only.amount, AUCTION_RESERVE.min(only.amount))
         }
         (AuctionType::Vickrey, [first, second, ..]) => {
-            (Some(first.bidder), first.amount, second.amount)
+            (Some(first.bidder_bot_id), first.amount, second.amount)
         }
     };
 
-    let mut sim_winner: Option<Identity> = None;
+    let mut sim_winner: Option<u64> = None;
     if let Some(w) = winner {
         if let Some(participant) = find_participant(ctx, match_id, w) {
             if participant.balance >= paid {
                 let bot_is_sim = ctx
                     .db
                     .bot()
-                    .identity()
+                    .id()
                     .find(w)
                     .map(|b| b.is_simulated)
                     .unwrap_or(false);
@@ -1500,7 +1695,7 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
                     ctx.db.holding().insert(Holding {
                         id: 0,
                         match_id,
-                        bot: w,
+                        bot_id: w,
                         letter: auction.letter.clone(),
                         count: 1,
                     });
@@ -1518,7 +1713,7 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
         auction_id,
         match_id,
         letter: auction.letter.clone(),
-        winner,
+        winner_bot_id: winner,
         top_bid,
         paid,
         closed_at: ctx.timestamp,
@@ -1582,13 +1777,13 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
 fn find_participant(
     ctx: &ReducerContext,
     match_id: u64,
-    bot: Identity,
+    bot_id: u64,
 ) -> Option<MatchParticipant> {
     ctx.db
         .match_participant()
         .mp_by_match()
         .filter(match_id)
-        .find(|p| p.bot == bot)
+        .find(|p| p.bot_id == bot_id)
 }
 
 fn play_word(
@@ -1597,7 +1792,7 @@ fn play_word(
     word_upper: &str,
 ) -> Result<(), String> {
     let match_id = participant.match_id;
-    let bot_identity = participant.bot;
+    let bot_id = participant.bot_id;
 
     let mut needed: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
     for c in word_upper.chars() {
@@ -1608,7 +1803,7 @@ fn play_word(
         .db
         .holding()
         .holding_by_bot()
-        .filter(bot_identity)
+        .filter(bot_id)
         .filter(|h| h.match_id == match_id)
         .collect();
     let mut by_letter: std::collections::HashMap<char, (u64, u32)> =
@@ -1657,7 +1852,7 @@ fn play_word(
     ctx.db.word_play().insert(WordPlay {
         id: 0,
         match_id,
-        bot: bot_identity,
+        bot_id,
         word: word_upper.to_string(),
         base_score,
         bonus,
@@ -1764,7 +1959,7 @@ fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
         .filter(auction.match_id)
         .collect();
     for p in participants {
-        let Some(bot) = ctx.db.bot().identity().find(p.bot) else {
+        let Some(bot) = ctx.db.bot().id().find(p.bot_id) else {
             continue;
         };
         if !bot.is_simulated {
@@ -1779,7 +1974,7 @@ fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
             .pending_bid()
             .bid_by_auction()
             .filter(auction.id)
-            .filter(|b| b.bidder == bot.identity)
+            .filter(|b| b.bidder_bot_id == bot.id)
             .map(|b| b.id)
             .collect();
         for id in prior {
@@ -1788,22 +1983,22 @@ fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
         ctx.db.pending_bid().insert(PendingBid {
             id: 0,
             auction_id: auction.id,
-            bidder: bot.identity,
+            bidder_bot_id: bot.id,
             amount,
             submitted_at: ctx.timestamp,
         });
     }
 }
 
-fn simulate_word_play(ctx: &ReducerContext, match_id: u64, bot_identity: Identity) {
-    let Some(participant) = find_participant(ctx, match_id, bot_identity) else {
+fn simulate_word_play(ctx: &ReducerContext, match_id: u64, bot_id: u64) {
+    let Some(participant) = find_participant(ctx, match_id, bot_id) else {
         return;
     };
     let holdings: Vec<Holding> = ctx
         .db
         .holding()
         .holding_by_bot()
-        .filter(bot_identity)
+        .filter(bot_id)
         .filter(|h| h.match_id == match_id)
         .collect();
     let mut rack: std::collections::HashMap<char, u32> = std::collections::HashMap::new();

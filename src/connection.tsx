@@ -80,8 +80,12 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           c.db.tournament,
           c.db.tournament_entry,
           c.db.tournament_match,
+          c.db.team,
           c.db.team_member,
+          c.db.bot_credential,
+          c.db.human_link,
           c.db.my_team,
+          c.db.my_nonces,
         ]) {
           const anyT = t as unknown as {
             onInsert: (cb: () => void) => void;
