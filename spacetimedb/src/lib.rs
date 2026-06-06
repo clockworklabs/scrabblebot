@@ -20,7 +20,7 @@ const NONCE_TTL_SECONDS: u64 = 60 * 60;
 // When `LOBBY_DURATION_SECONDS` elapses, whoever's there plays, padded out
 // to `LOBBY_MAX_SIZE` with idle simulated bots.
 const LOBBY_MAX_SIZE: u32 = 6;
-const LOBBY_DURATION_SECONDS: u64 = 60;
+const LOBBY_DURATION_SECONDS: u64 = 90;
 
 // Hardcoded seed admins — inserted by `init` on every fresh database init
 // so wiping data (e.g. `--delete-data on-conflict` during dev) doesn't lock
@@ -604,12 +604,12 @@ pub fn init(ctx: &ReducerContext) {
 
     // Seed the simulated-bot pool used to pad lobby timeouts.
     for (name, strategy) in [
-        ("Cheapo", BotStrategy::Cheapskate),
-        ("Valor", BotStrategy::ValueBidder),
-        ("Brutus", BotStrategy::Aggressive),
-        ("Hagrid", BotStrategy::ValueBidder),
-        ("Maverick", BotStrategy::Aggressive),
-        ("Snippet", BotStrategy::Cheapskate),
+        ("Cheapo-sim", BotStrategy::Cheapskate),
+        ("Valor-sim", BotStrategy::ValueBidder),
+        ("Brutus-sim", BotStrategy::Aggressive),
+        ("Hagrid-sim", BotStrategy::ValueBidder),
+        ("Maverick-sim", BotStrategy::Aggressive),
+        ("Snippet-sim", BotStrategy::Cheapskate),
     ] {
         let _ = ensure_sim_bot(ctx, name, strategy);
     }
@@ -1337,28 +1337,16 @@ fn resolve_lobby(ctx: &ReducerContext, lobby_id: u64, pad_with_sims: bool) {
         .collect();
 
     if pad_with_sims {
+        // Sim bots are reusable — they're driven inside the module, so a
+        // single Cheapo can play any number of concurrent matches (each
+        // gets its own MatchParticipant / Holding rows). We just need to
+        // avoid putting the same sim in *this* lobby twice.
         let in_roster: std::collections::HashSet<u64> = roster.iter().copied().collect();
-        let busy: std::collections::HashSet<u64> = ctx
-            .db
-            .match_state()
-            .iter()
-            .filter(|m| m.status == MatchStatus::Running)
-            .flat_map(|m| {
-                ctx.db
-                    .match_participant()
-                    .mp_by_match()
-                    .filter(m.id)
-                    .map(|p| p.bot_id)
-                    .collect::<Vec<_>>()
-            })
-            .collect();
         let mut available_sims: Vec<u64> = ctx
             .db
             .bot()
             .iter()
-            .filter(|b| {
-                b.is_simulated && !in_roster.contains(&b.id) && !busy.contains(&b.id)
-            })
+            .filter(|b| b.is_simulated && !in_roster.contains(&b.id))
             .map(|b| b.id)
             .collect();
         // Shuffle so we don't always grab the same sim bots first.
