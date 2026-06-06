@@ -32,6 +32,7 @@ export default function Leaderboard() {
               <th className="num">Rating</th>
               <th className="num">Matches</th>
               <th className="num">Wins</th>
+              <th className="num">Win rate</th>
               <th className="num">Total score</th>
             </tr>
           </thead>
@@ -45,6 +46,11 @@ export default function Leaderboard() {
                   <td className="num">{s.rating}</td>
                   <td className="num">{s.matchesPlayed}</td>
                   <td className="num">{s.wins}</td>
+                  <td className="num">
+                    {s.matchesPlayed > 0
+                      ? `${((s.wins / s.matchesPlayed) * 100).toFixed(1)}%`
+                      : "N/A"}
+                  </td>
                   <td className="num">{String(s.totalScore)}</td>
                 </tr>
               );
@@ -56,6 +62,7 @@ export default function Leaderboard() {
                 <td className="num secondary">1000</td>
                 <td className="num secondary">0</td>
                 <td className="num secondary">0</td>
+                <td className="num secondary">N/A</td>
                 <td className="num secondary">0</td>
               </tr>
             ))}
