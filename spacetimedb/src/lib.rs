@@ -2076,8 +2076,6 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
                 }
             }
         }
-    } else {
-        return_to_bag(ctx, match_id, &auction.letter);
     }
 
     ctx.db.auction_result().insert(AuctionResult {
@@ -2284,34 +2282,6 @@ fn draw_letter(ctx: &ReducerContext, match_id: u64) -> Option<String> {
         idx -= bag.remaining;
     }
     None
-}
-
-fn return_to_bag(ctx: &ReducerContext, match_id: u64, letter: &str) {
-    let entry = ctx
-        .db
-        .bag_letter()
-        .bag_by_match()
-        .filter(match_id)
-        .find(|b| b.letter == letter);
-    if let Some(bag) = entry {
-        ctx.db.bag_letter().id().update(BagLetter {
-            remaining: bag.remaining + 1,
-            ..bag
-        });
-    } else {
-        ctx.db.bag_letter().insert(BagLetter {
-            id: 0,
-            match_id,
-            letter: letter.to_string(),
-            remaining: 1,
-        });
-    }
-    if let Some(m) = ctx.db.match_state().id().find(match_id) {
-        ctx.db.match_state().id().update(Match {
-            bag_total: m.bag_total + 1,
-            ..m
-        });
-    }
 }
 
 // ---------- Simulated-bot logic ----------
