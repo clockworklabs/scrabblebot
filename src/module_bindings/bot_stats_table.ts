@@ -13,10 +13,10 @@ import {
 export default __t.row({
   botId: __t.u64().primaryKey().name("bot_id"),
   rating: __t.i32(),
-  openskillMu: __t.f64().name("openskill_mu"),
-  openskillSigma: __t.f64().name("openskill_sigma"),
   matchesPlayed: __t.u32().name("matches_played"),
   wins: __t.u32(),
   totalScore: __t.i64().name("total_score"),
   lastPlayed: __t.option(__t.timestamp()).name("last_played"),
+  openskillMu: __t.f64().name("openskill_mu"),
+  openskillSigma: __t.f64().name("openskill_sigma"),
 });

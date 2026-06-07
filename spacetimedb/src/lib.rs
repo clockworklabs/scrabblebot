@@ -469,13 +469,15 @@ pub struct AuctionSchedule {
 pub struct BotStats {
     #[primary_key]
     pub bot_id: u64,
-    pub rating: i32,        // ELO; new bots start at 1000
-    pub openskill_mu: f64,    // OpenSkill mean; starts at 25.0
-    pub openskill_sigma: f64, // OpenSkill uncertainty; starts at 25/3 ≈ 8.33
+    pub rating: i32,
     pub matches_played: u32,
     pub wins: u32,
     pub total_score: i64,
     pub last_played: Option<Timestamp>,
+    #[default(25.0_f64)]
+    pub openskill_mu: f64,
+    #[default(8.333333333333334_f64)]
+    pub openskill_sigma: f64,
 }
 
 #[table(accessor = tournament, public)]
