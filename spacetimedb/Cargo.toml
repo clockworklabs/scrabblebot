@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 spacetimedb = { version = "2.2.0" }
 log = "0.4"
 rand = "0.8"
+skillratings = "0.29.0"

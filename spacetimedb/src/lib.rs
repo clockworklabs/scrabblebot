@@ -1982,6 +1982,11 @@ fn start_final_game(ctx: &ReducerContext, tournament_id: u64, game_num: u32) -> 
 
 // ---------- ELO ----------
 
+use skillratings::{
+    elo::{elo_rating_period, EloConfig, EloRating},
+    Outcomes,
+};
+
 fn get_or_init_stats(ctx: &ReducerContext, bot_id: u64) -> BotStats {
     ctx.db
         .bot_stats()
@@ -2009,37 +2014,34 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
     }
     placed.sort_by(|a, b| b.score.cmp(&a.score));
 
-    let k: f64 = 32.0;
-    let mut ratings: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
-    for p in &placed {
-        let s = get_or_init_stats(ctx, p.bot_id);
-        ratings.insert(p.bot_id, s.rating as f64);
-    }
-    let mut deltas: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
-    for i in 0..placed.len() {
-        for j in (i + 1)..placed.len() {
-            let a = placed[i].bot_id;
-            let b = placed[j].bot_id;
-            let ra = *ratings.get(&a).unwrap();
-            let rb = *ratings.get(&b).unwrap();
-            let expected_a = 1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0));
-            let (actual_a, actual_b) = if placed[i].score > placed[j].score {
-                (1.0, 0.0)
-            } else if placed[i].score < placed[j].score {
-                (0.0, 1.0)
-            } else {
-                (0.5, 0.5)
-            };
-            let delta_a = k * (actual_a - expected_a);
-            *deltas.entry(a).or_insert(0.0) += delta_a;
-            *deltas.entry(b).or_insert(0.0) += -delta_a + k * (actual_b - (1.0 - expected_a));
-        }
-    }
-    let opponents = (placed.len() - 1) as f64;
+    let config = EloConfig::new();
+
+    // Snapshot all ratings before any updates
+    let pre_ratings: Vec<EloRating> = placed
+        .iter()
+        .map(|p| EloRating { rating: get_or_init_stats(ctx, p.bot_id).rating as f64 })
+        .collect();
+
     for (idx, p) in placed.iter().enumerate() {
-        let raw_delta = *deltas.get(&p.bot_id).unwrap_or(&0.0);
-        let scaled = raw_delta / opponents;
-        let new_rating = ((*ratings.get(&p.bot_id).unwrap() + scaled).round() as i32).max(0);
+        let results: Vec<(EloRating, Outcomes)> = pre_ratings
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != idx)
+            .map(|(j, &opp)| {
+                let outcome = if placed[idx].score > placed[j].score {
+                    Outcomes::WIN
+                } else if placed[idx].score < placed[j].score {
+                    Outcomes::LOSS
+                } else {
+                    Outcomes::DRAW
+                };
+                (opp, outcome)
+            })
+            .collect();
+
+        let new_elo = elo_rating_period(&pre_ratings[idx], &results, &config);
+        let new_rating = (new_elo.rating.round() as i32).max(0);
+
         let existing = get_or_init_stats(ctx, p.bot_id);
         let was_win = idx == 0;
         let stats = BotStats {
@@ -2056,6 +2058,30 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
             ctx.db.bot_stats().insert(stats);
         }
     }
+}
+
+// Resets all BotStats and replays ELO across every ended match in chronological order.
+#[reducer]
+pub fn backfill_elo(ctx: &ReducerContext) -> Result<(), String> {
+    require_admin(ctx)?;
+
+    for stats in ctx.db.bot_stats().iter().collect::<Vec<_>>() {
+        ctx.db.bot_stats().bot_id().delete(&stats.bot_id);
+    }
+
+    let mut ended: Vec<Match> = ctx
+        .db
+        .match_state()
+        .iter()
+        .filter(|m| m.status == MatchStatus::Ended)
+        .collect();
+    ended.sort_by_key(|m| m.ended_at);
+
+    for m in ended {
+        update_elo_at_match_end(ctx, m.id);
+    }
+
+    Ok(())
 }
 
 // ---------- Auction tick (scheduled) ----------
