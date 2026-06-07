@@ -35,6 +35,7 @@ import {
 
 // Import all reducer arg schemas
 import AddAdminReducer from "./add_admin_reducer";
+import BackfillTopBidArchiveReducer from "./backfill_top_bid_archive_reducer";
 import BootstrapAdminReducer from "./bootstrap_admin_reducer";
 import ClaimCredentialReducer from "./claim_credential_reducer";
 import ConnectIdReducer from "./connect_id_reducer";
@@ -56,6 +57,7 @@ import SubmitWordReducer from "./submit_word_reducer";
 import AdminRow from "./admin_table";
 import AuctionRow from "./auction_table";
 import AuctionResultRow from "./auction_result_table";
+import AuctionTopBidArchiveRow from "./auction_top_bid_archive_table";
 import BotRow from "./bot_table";
 import BotCredentialRow from "./bot_credential_table";
 import BotStatsRow from "./bot_stats_table";
@@ -122,6 +124,20 @@ const tablesSchema = __schema({
       { name: 'auction_result_auction_id_key', constraint: 'unique', columns: ['auctionId'] },
     ],
   }, AuctionResultRow),
+  auction_top_bid_archive: __table({
+    name: 'auction_top_bid_archive',
+    indexes: [
+      { accessor: 'auction_id', name: 'auction_top_bid_archive_auction_id_idx_btree', algorithm: 'btree', columns: [
+        'auctionId',
+      ] },
+      { accessor: 'archive_by_match', name: 'auction_top_bid_archive_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_top_bid_archive_auction_id_key', constraint: 'unique', columns: ['auctionId'] },
+    ],
+  }, AuctionTopBidArchiveRow),
   bot: __table({
     name: 'bot',
     indexes: [
@@ -376,6 +392,7 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("add_admin", AddAdminReducer),
+  __reducerSchema("backfill_top_bid_archive", BackfillTopBidArchiveReducer),
   __reducerSchema("bootstrap_admin", BootstrapAdminReducer),
   __reducerSchema("claim_credential", ClaimCredentialReducer),
   __reducerSchema("connect_id", ConnectIdReducer),

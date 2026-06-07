@@ -330,7 +330,8 @@ pub struct BagLetter {
 #[table(
     accessor = holding,
     index(accessor = holding_by_bot, btree(columns = [bot_id])),
-    index(accessor = holding_by_match, btree(columns = [match_id]))
+    index(accessor = holding_by_match, btree(columns = [match_id])),
+    index(accessor = holding_by_match_bot, btree(columns = [match_id, bot_id]))
 )]
 #[derive(Clone)]
 pub struct Holding {
@@ -393,13 +394,16 @@ pub struct AuctionResult {
     pub closed_at: Timestamp,
 }
 
-// Private — the winner's top bid is interesting to spectators but is
-// sensitive info that bots shouldn't see (it leaks the winner's true
-// valuation and undermines Vickrey's truth-telling). Exposed through the
-// `visible_auction_top_bids` view, which returns empty for callers that
-// hold a BotCredential.
+// Private — live, in-progress matches. Top bid is sensitive while a match
+// is running (it leaks the winner's true valuation and would undermine
+// Vickrey's truth-telling if competing bots could see it). The
+// `visible_auction_top_bids` view exposes these to spectators only, bounded
+// to Running matches. On match end, rows here are moved to
+// `auction_top_bid_archive` (public) so spectators can replay finished
+// matches without any view-body cost.
 #[table(
     accessor = auction_top_bid,
+    index(accessor = top_bid_by_match, btree(columns = [match_id])),
     index(accessor = top_bid_visible, btree(columns = [visible]))
 )]
 #[derive(Clone)]
@@ -408,10 +412,25 @@ pub struct AuctionTopBid {
     pub auction_id: u64,
     pub match_id: u64,
     pub top_bid: i64,
-    // Always true. Required because SpacetimeDB views in 2.2 can't iterate
-    // arbitrary tables — only filter by an indexed column. We index on
-    // this and filter by `true` to enumerate everything in the view.
+    // Unused. Originally indexed for view enumeration; the view now uses
+    // `top_bid_by_match` driven by match status. Kept for schema compat.
     pub visible: bool,
+}
+
+// Public — post-match archive of top_bid. Inserted by `on_match_ended` once
+// the match is no longer live (bots can't act on the info, so it's safe to
+// expose). Spectators subscribe `WHERE match_id = ?` from the match page.
+#[table(
+    accessor = auction_top_bid_archive,
+    public,
+    index(accessor = archive_by_match, btree(columns = [match_id]))
+)]
+#[derive(Clone)]
+pub struct AuctionTopBidArchive {
+    #[primary_key]
+    pub auction_id: u64,
+    pub match_id: u64,
+    pub top_bid: i64,
 }
 
 #[table(
@@ -531,12 +550,7 @@ fn my_team(ctx: &ViewContext) -> Option<MyTeam> {
     let member = ctx.db.team_member().user().find(human)?;
     let team = ctx.db.team().id().find(member.team_id)?;
     let bot = ctx.db.bot().bot_by_team().filter(team.id).next()?;
-    let credential_count = ctx
-        .db
-        .bot_credential()
-        .cred_by_bot()
-        .filter(bot.id)
-        .count() as u32;
+    let credential_count = ctx.db.bot_credential().cred_by_bot().filter(bot.id).count() as u32;
     Some(MyTeam {
         team_id: team.id,
         team_name: team.name,
@@ -547,9 +561,12 @@ fn my_team(ctx: &ViewContext) -> Option<MyTeam> {
     })
 }
 
-// Spectator-only view of the winning bid amount. Callers that hold a
+// Spectator-only view of live winning-bid amounts. Callers that hold a
 // BotCredential (real bots in the game) get an empty Vec; everyone else
-// sees the data.
+// sees the data for all currently-Running matches. Bounded by an indexed
+// nested-loop join through match status, so the result is small even as
+// the underlying private table grows. Ended-match top_bids live in the
+// public `auction_top_bid_archive` table; subscribe there for replays.
 #[view(accessor = visible_auction_top_bids, public)]
 fn visible_auction_top_bids(ctx: &ViewContext) -> Vec<AuctionTopBid> {
     if ctx
@@ -561,11 +578,18 @@ fn visible_auction_top_bids(ctx: &ViewContext) -> Vec<AuctionTopBid> {
     {
         return vec![];
     }
-    ctx.db
-        .auction_top_bid()
-        .top_bid_visible()
-        .filter(true)
-        .collect()
+    let mut out = Vec::new();
+    for m in ctx
+        .db
+        .match_state()
+        .match_by_status()
+        .filter(MatchStatus::Running)
+    {
+        for t in ctx.db.auction_top_bid().top_bid_by_match().filter(m.id) {
+            out.push(t);
+        }
+    }
+    out
 }
 
 // Nonces the caller has minted. Private to the caller.
@@ -663,11 +687,7 @@ pub fn init(ctx: &ReducerContext) {
     open_lobby_or_create(ctx);
 }
 
-fn ensure_sim_bot(
-    ctx: &ReducerContext,
-    name: &str,
-    strategy: BotStrategy,
-) -> Result<u64, String> {
+fn ensure_sim_bot(ctx: &ReducerContext, name: &str, strategy: BotStrategy) -> Result<u64, String> {
     if let Some(bot) = ctx.db.bot().name().find(name.to_string()) {
         return Ok(bot.id);
     }
@@ -751,9 +771,7 @@ pub fn connect_id(ctx: &ReducerContext, web_identity: Identity) -> Result<(), St
 #[reducer]
 pub fn bootstrap_admin(ctx: &ReducerContext) -> Result<(), String> {
     if ctx.db.admin().iter().next().is_some() {
-        return Err(
-            "Admins already exist — ask one to add you with add_admin".into(),
-        );
+        return Err("Admins already exist — ask one to add you with add_admin".into());
     }
     let human = resolve_human(ctx);
     ctx.db.admin().insert(Admin {
@@ -766,10 +784,7 @@ pub fn bootstrap_admin(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 #[reducer]
-pub fn add_admin(
-    ctx: &ReducerContext,
-    human_identity: Identity,
-) -> Result<(), String> {
+pub fn add_admin(ctx: &ReducerContext, human_identity: Identity) -> Result<(), String> {
     require_admin(ctx)?;
     if ctx
         .db
@@ -791,10 +806,7 @@ pub fn add_admin(
 }
 
 #[reducer]
-pub fn remove_admin(
-    ctx: &ReducerContext,
-    human_identity: Identity,
-) -> Result<(), String> {
+pub fn remove_admin(ctx: &ReducerContext, human_identity: Identity) -> Result<(), String> {
     require_admin(ctx)?;
     let caller = resolve_human(ctx);
     if caller == human_identity {
@@ -875,7 +887,12 @@ pub fn create_team(
 #[reducer]
 pub fn join_team(ctx: &ReducerContext, team_name: String) -> Result<(), String> {
     let team_name = team_name.trim().to_string();
-    let team = ctx.db.team().name().find(team_name.clone()).ok_or("No such team")?;
+    let team = ctx
+        .db
+        .team()
+        .name()
+        .find(team_name.clone())
+        .ok_or("No such team")?;
     let human = resolve_human(ctx);
     if ctx.db.team_member().user().find(human).is_some() {
         return Err("You're already on a team".into());
@@ -913,8 +930,8 @@ pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
         let bot_ids: Vec<u64> = ctx
             .db
             .bot()
-            .iter()
-            .filter(|b| b.team_id == team_id)
+            .bot_by_team()
+            .filter(team_id)
             .map(|b| b.id)
             .collect();
         for bid in bot_ids {
@@ -937,10 +954,7 @@ pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 #[reducer]
-pub fn promote_to_owner(
-    ctx: &ReducerContext,
-    target_user: Identity,
-) -> Result<(), String> {
+pub fn promote_to_owner(ctx: &ReducerContext, target_user: Identity) -> Result<(), String> {
     let human = resolve_human(ctx);
     let me = ctx
         .db
@@ -1021,7 +1035,13 @@ pub fn claim_credential(ctx: &ReducerContext, code: String) -> Result<(), String
     }
     // Is the caller already a credential for ANY bot? Disallow — a fresh
     // client (no prior credential) must claim.
-    if ctx.db.bot_credential().identity().find(ctx.sender()).is_some() {
+    if ctx
+        .db
+        .bot_credential()
+        .identity()
+        .find(ctx.sender())
+        .is_some()
+    {
         return Err("Your identity is already a credential for a bot".into());
     }
     ctx.db.bot_credential().insert(BotCredential {
@@ -1091,6 +1111,50 @@ pub fn spawn_simulated_bot(
     Ok(())
 }
 
+// One-shot migration helper: move historical `auction_top_bid` rows for
+// ended matches into the public `auction_top_bid_archive`. New matches
+// archive automatically via `on_match_ended`; this drains the backlog from
+// before the archive existed. Chunked because the table held ~1.4M rows;
+// `max_rows` caps the work per call so the reducer stays under the time
+// budget. Admin re-invokes until it reports zero moved.
+#[reducer]
+pub fn backfill_top_bid_archive(ctx: &ReducerContext, max_rows: u32) -> Result<(), String> {
+    require_admin(ctx)?;
+    if max_rows == 0 {
+        return Err("max_rows must be > 0".into());
+    }
+    let mut moved: u32 = 0;
+    'outer: for m in ctx
+        .db
+        .match_state()
+        .match_by_status()
+        .filter(MatchStatus::Ended)
+    {
+        let live: Vec<AuctionTopBid> = ctx
+            .db
+            .auction_top_bid()
+            .top_bid_by_match()
+            .filter(m.id)
+            .collect();
+        for t in live {
+            ctx.db
+                .auction_top_bid_archive()
+                .insert(AuctionTopBidArchive {
+                    auction_id: t.auction_id,
+                    match_id: t.match_id,
+                    top_bid: t.top_bid,
+                });
+            ctx.db.auction_top_bid().auction_id().delete(t.auction_id);
+            moved += 1;
+            if moved >= max_rows {
+                break 'outer;
+            }
+        }
+    }
+    log::info!("backfill_top_bid_archive moved {} rows", moved);
+    Ok(())
+}
+
 // ---------- Match control ----------
 // Matches now start via the lobby flow (see `join_lobby` /
 // `lobby_timeout_tick`) or via the tournament code. There's no direct
@@ -1152,9 +1216,9 @@ fn start_match_with(
             let existing: Option<Holding> = ctx
                 .db
                 .holding()
-                .holding_by_bot()
-                .filter(bid)
-                .find(|h| h.match_id == match_id && h.letter == letter);
+                .holding_by_match_bot()
+                .filter((match_id, bid))
+                .find(|h| h.letter == letter);
             if let Some(h) = existing {
                 ctx.db.holding().id().update(Holding {
                     count: h.count + 1,
@@ -1226,8 +1290,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
     if ctx.timestamp >= auction.closes_at {
         return Err("Auction window expired".into());
     }
-    let participant =
-        find_participant(ctx, auction.match_id, bot_id).ok_or("Not in this match")?;
+    let participant = find_participant(ctx, auction.match_id, bot_id).ok_or("Not in this match")?;
     if participant.balance < amount {
         return Err("Insufficient balance".into());
     }
@@ -1257,11 +1320,7 @@ pub fn submit_bid(ctx: &ReducerContext, auction_id: u64, amount: i64) -> Result<
 // ---------- Word play ----------
 
 #[reducer]
-pub fn submit_word(
-    ctx: &ReducerContext,
-    match_id: u64,
-    word: String,
-) -> Result<(), String> {
+pub fn submit_word(ctx: &ReducerContext, match_id: u64, word: String) -> Result<(), String> {
     let m = ctx
         .db
         .match_state()
@@ -1272,8 +1331,7 @@ pub fn submit_word(
         return Err("Match not running".into());
     }
     let bot_id = caller_bot_id(ctx).ok_or("Your identity is not a credential for any bot")?;
-    let participant =
-        find_participant(ctx, match_id, bot_id).ok_or("Not in this match")?;
+    let participant = find_participant(ctx, match_id, bot_id).ok_or("Not in this match")?;
 
     let word_upper = word.to_ascii_uppercase();
     if word_upper.len() < 2 {
@@ -1293,8 +1351,7 @@ pub fn submit_word(
 
 #[reducer]
 pub fn join_lobby(ctx: &ReducerContext) -> Result<(), String> {
-    let bot_id = caller_bot_id(ctx)
-        .ok_or("Your identity is not a credential for any bot")?;
+    let bot_id = caller_bot_id(ctx).ok_or("Your identity is not a credential for any bot")?;
 
     // Bots can't be in two places at once.
     if bot_in_running_match(ctx, bot_id) {
@@ -1385,11 +1442,13 @@ fn open_lobby_or_create(ctx: &ReducerContext) -> Lobby {
         auction_type: AuctionType::Vickrey,
         resolved_match_id: None,
     });
-    ctx.db.lobby_timeout_schedule().insert(LobbyTimeoutSchedule {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Time(closes_at),
-        lobby_id: lobby.id,
-    });
+    ctx.db
+        .lobby_timeout_schedule()
+        .insert(LobbyTimeoutSchedule {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::Time(closes_at),
+            lobby_id: lobby.id,
+        });
     log::info!("Opened lobby {}", lobby.id);
     lobby
 }
@@ -1470,11 +1529,7 @@ fn resolve_lobby(ctx: &ReducerContext, lobby_id: u64, pad_with_sims: bool) {
         resolved_match_id: new_match_id,
         ..lobby
     });
-    log::info!(
-        "Lobby {} resolved -> match {:?}",
-        lobby_id,
-        new_match_id
-    );
+    log::info!("Lobby {} resolved -> match {:?}", lobby_id, new_match_id);
 
     open_lobby_or_create(ctx);
 }
@@ -1530,11 +1585,7 @@ pub fn start_tournament(
     Ok(())
 }
 
-fn start_swiss_round(
-    ctx: &ReducerContext,
-    tournament_id: u64,
-    round: u32,
-) -> Result<(), String> {
+fn start_swiss_round(ctx: &ReducerContext, tournament_id: u64, round: u32) -> Result<(), String> {
     let t = ctx
         .db
         .tournament()
@@ -1573,7 +1624,10 @@ fn pair_into_matches(
     let match_size = t.match_size as usize;
     let mut i = 0;
     while i + match_size <= entries.len() {
-        let roster: Vec<u64> = entries[i..i + match_size].iter().map(|e| e.bot_id).collect();
+        let roster: Vec<u64> = entries[i..i + match_size]
+            .iter()
+            .map(|e| e.bot_id)
+            .collect();
         let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
         start_match_with(ctx, t.auction_type.clone(), roster)?;
         let new_match_id = ctx
@@ -1597,6 +1651,26 @@ fn pair_into_matches(
 }
 
 fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
+    // Move live top_bid rows into the public archive. Once a match ends,
+    // bots can't act on the info, so it's safe to expose; and pruning the
+    // private table keeps `visible_auction_top_bids` cheap to materialise.
+    let live: Vec<AuctionTopBid> = ctx
+        .db
+        .auction_top_bid()
+        .top_bid_by_match()
+        .filter(match_id)
+        .collect();
+    for t in live {
+        ctx.db
+            .auction_top_bid_archive()
+            .insert(AuctionTopBidArchive {
+                auction_id: t.auction_id,
+                match_id: t.match_id,
+                top_bid: t.top_bid,
+            });
+        ctx.db.auction_top_bid().auction_id().delete(t.auction_id);
+    }
+
     update_elo_at_match_end(ctx, match_id);
 
     let Some(tm) = ctx
@@ -1738,11 +1812,7 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
     advance_tournament(ctx, t.id);
 }
 
-fn aggregate_final_score(
-    ctx: &ReducerContext,
-    tournament_id: u64,
-    bot_id: u64,
-) -> i64 {
+fn aggregate_final_score(ctx: &ReducerContext, tournament_id: u64, bot_id: u64) -> i64 {
     let mut total: i64 = 0;
     let final_matches: Vec<u64> = ctx
         .db
@@ -1828,10 +1898,7 @@ fn advance_tournament(ctx: &ReducerContext, tournament_id: u64) {
     }
 }
 
-fn start_elimination_round(
-    ctx: &ReducerContext,
-    tournament_id: u64,
-) -> Result<(), String> {
+fn start_elimination_round(ctx: &ReducerContext, tournament_id: u64) -> Result<(), String> {
     let t = ctx
         .db
         .tournament()
@@ -1874,11 +1941,7 @@ fn start_elimination_round(
     Ok(())
 }
 
-fn start_final_game(
-    ctx: &ReducerContext,
-    tournament_id: u64,
-    game_num: u32,
-) -> Result<(), String> {
+fn start_final_game(ctx: &ReducerContext, tournament_id: u64, game_num: u32) -> Result<(), String> {
     let t = ctx
         .db
         .tournament()
@@ -1920,14 +1983,18 @@ fn start_final_game(
 // ---------- ELO ----------
 
 fn get_or_init_stats(ctx: &ReducerContext, bot_id: u64) -> BotStats {
-    ctx.db.bot_stats().bot_id().find(bot_id).unwrap_or(BotStats {
-        bot_id,
-        rating: 1000,
-        matches_played: 0,
-        wins: 0,
-        total_score: 0,
-        last_played: None,
-    })
+    ctx.db
+        .bot_stats()
+        .bot_id()
+        .find(bot_id)
+        .unwrap_or(BotStats {
+            bot_id,
+            rating: 1000,
+            matches_played: 0,
+            wins: 0,
+            total_score: 0,
+            last_played: None,
+        })
 }
 
 fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
@@ -1943,14 +2010,12 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
     placed.sort_by(|a, b| b.score.cmp(&a.score));
 
     let k: f64 = 32.0;
-    let mut ratings: std::collections::HashMap<u64, f64> =
-        std::collections::HashMap::new();
+    let mut ratings: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
     for p in &placed {
         let s = get_or_init_stats(ctx, p.bot_id);
         ratings.insert(p.bot_id, s.rating as f64);
     }
-    let mut deltas: std::collections::HashMap<u64, f64> =
-        std::collections::HashMap::new();
+    let mut deltas: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
     for i in 0..placed.len() {
         for j in (i + 1)..placed.len() {
             let a = placed[i].bot_id;
@@ -2020,15 +2085,15 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
 
     let (winner, top_bid, paid) = match (m.auction_type.clone(), sorted.as_slice()) {
         (_, []) => (None, 0, 0),
-        (AuctionType::FirstPrice, [only]) => {
-            (Some(only.bidder_bot_id), only.amount, only.amount)
-        }
+        (AuctionType::FirstPrice, [only]) => (Some(only.bidder_bot_id), only.amount, only.amount),
         (AuctionType::FirstPrice, [first, ..]) => {
             (Some(first.bidder_bot_id), first.amount, first.amount)
         }
-        (AuctionType::Vickrey, [only]) => {
-            (Some(only.bidder_bot_id), only.amount, AUCTION_RESERVE.min(only.amount))
-        }
+        (AuctionType::Vickrey, [only]) => (
+            Some(only.bidder_bot_id),
+            only.amount,
+            AUCTION_RESERVE.min(only.amount),
+        ),
         (AuctionType::Vickrey, [first, second, ..]) => {
             (Some(first.bidder_bot_id), first.amount, second.amount)
         }
@@ -2050,14 +2115,13 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
                     balance: new_balance,
                     ..participant
                 });
-                let existing: Vec<Holding> = ctx
+                let existing = ctx
                     .db
                     .holding()
-                    .holding_by_bot()
-                    .filter(w)
-                    .filter(|h| h.match_id == match_id && h.letter == auction.letter)
-                    .collect();
-                if let Some(h) = existing.into_iter().next() {
+                    .holding_by_match_bot()
+                    .filter((match_id, w))
+                    .find(|h| h.letter == auction.letter);
+                if let Some(h) = existing {
                     ctx.db.holding().id().update(Holding {
                         count: h.count + 1,
                         ..h
@@ -2150,11 +2214,7 @@ pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
 
 // ---------- Helpers ----------
 
-fn find_participant(
-    ctx: &ReducerContext,
-    match_id: u64,
-    bot_id: u64,
-) -> Option<MatchParticipant> {
+fn find_participant(ctx: &ReducerContext, match_id: u64, bot_id: u64) -> Option<MatchParticipant> {
     ctx.db
         .match_participant()
         .mp_by_match()
@@ -2178,9 +2238,8 @@ fn play_word(
     let holdings: Vec<Holding> = ctx
         .db
         .holding()
-        .holding_by_bot()
-        .filter(bot_id)
-        .filter(|h| h.match_id == match_id)
+        .holding_by_match_bot()
+        .filter((match_id, bot_id))
         .collect();
     let mut by_letter: std::collections::HashMap<char, (u64, u32)> =
         std::collections::HashMap::new();
@@ -2202,10 +2261,7 @@ fn play_word(
         if new_ct == 0 {
             ctx.db.holding().id().delete(hid);
         } else if let Some(h) = ctx.db.holding().id().find(hid) {
-            ctx.db.holding().id().update(Holding {
-                count: new_ct,
-                ..h
-            });
+            ctx.db.holding().id().update(Holding { count: new_ct, ..h });
         }
     }
 
@@ -2345,9 +2401,8 @@ fn simulate_word_play(ctx: &ReducerContext, match_id: u64, bot_id: u64) {
     let holdings: Vec<Holding> = ctx
         .db
         .holding()
-        .holding_by_bot()
-        .filter(bot_id)
-        .filter(|h| h.match_id == match_id)
+        .holding_by_match_bot()
+        .filter((match_id, bot_id))
         .collect();
     let mut rack: std::collections::HashMap<char, u32> = std::collections::HashMap::new();
     for h in &holdings {

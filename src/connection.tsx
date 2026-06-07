@@ -90,6 +90,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           c.db.admin,
           c.db.my_admin,
           c.db.visible_auction_top_bids,
+          c.db.auction_top_bid_archive,
         ]) {
           const anyT = t as unknown as {
             onInsert: (cb: () => void) => void;

@@ -59,10 +59,17 @@ export default function MatchView() {
   }
   allPlays.sort((a, b) => Number(a.id - b.id));
 
-  // top_bid lives in a private table exposed via the
-  // `visible_auction_top_bids` view (hidden from bot clients).
+  // Live top_bids (Running matches) come through the
+  // `visible_auction_top_bids` view, hidden from bot clients. Once a match
+  // ends, on_match_ended moves the rows to the public
+  // `auction_top_bid_archive` table for historical replay.
   const topBidByAuction = new Map<string, bigint>();
   for (const t of conn.db.visible_auction_top_bids.iter()) {
+    if (t.matchId === matchId) {
+      topBidByAuction.set(String(t.auctionId), t.topBid);
+    }
+  }
+  for (const t of conn.db.auction_top_bid_archive.iter()) {
     if (t.matchId === matchId) {
       topBidByAuction.set(String(t.auctionId), t.topBid);
     }

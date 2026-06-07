@@ -10,3 +10,4 @@ Cargo.lock
 # bindings are tracked so the production build doesn't need spacetime CLI.
 bot-starter/src/module_bindings/
 .vercel
+.env*
