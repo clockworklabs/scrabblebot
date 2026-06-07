@@ -30,6 +30,9 @@ export default function Leaderboard() {
               <th>#</th>
               <th>Bot</th>
               <th className="num">Rating</th>
+              <th className="num">OS Rating</th>
+              <th className="num">OS μ</th>
+              <th className="num">OS σ</th>
               <th className="num">Matches</th>
               <th className="num">Wins</th>
               <th className="num">Win rate</th>
@@ -44,6 +47,11 @@ export default function Leaderboard() {
                   <td>{i + 1}</td>
                   <td>{bot?.name ?? `#${s.botId}`}</td>
                   <td className="num">{s.rating}</td>
+                  <td className="num">
+                    {(s.openskillMu - 3 * s.openskillSigma).toFixed(2)}
+                  </td>
+                  <td className="num">{s.openskillMu.toFixed(2)}</td>
+                  <td className="num">{s.openskillSigma.toFixed(2)}</td>
                   <td className="num">{s.matchesPlayed}</td>
                   <td className="num">{s.wins}</td>
                   <td className="num">
@@ -60,6 +68,9 @@ export default function Leaderboard() {
                 <td>{stats.length + i + 1}</td>
                 <td>{b.name}</td>
                 <td className="num secondary">1000</td>
+                <td className="num secondary">0.00</td>
+                <td className="num secondary">25.00</td>
+                <td className="num secondary">8.33</td>
                 <td className="num secondary">0</td>
                 <td className="num secondary">0</td>
                 <td className="num secondary">N/A</td>

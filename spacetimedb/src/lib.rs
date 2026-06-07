@@ -469,7 +469,9 @@ pub struct AuctionSchedule {
 pub struct BotStats {
     #[primary_key]
     pub bot_id: u64,
-    pub rating: i32, // ELO; new bots start at 1000
+    pub rating: i32,        // ELO; new bots start at 1000
+    pub openskill_mu: f64,    // OpenSkill mean; starts at 25.0
+    pub openskill_sigma: f64, // OpenSkill uncertainty; starts at 25/3 ≈ 8.33
     pub matches_played: u32,
     pub wins: u32,
     pub total_score: i64,
@@ -1984,6 +1986,7 @@ fn start_final_game(ctx: &ReducerContext, tournament_id: u64, game_num: u32) -> 
 
 use skillratings::{
     elo::{elo_rating_period, EloConfig, EloRating},
+    weng_lin::{weng_lin_rating_period, WengLinConfig, WengLinRating},
     Outcomes,
 };
 
@@ -1995,6 +1998,8 @@ fn get_or_init_stats(ctx: &ReducerContext, bot_id: u64) -> BotStats {
         .unwrap_or(BotStats {
             bot_id,
             rating: 1000,
+            openskill_mu: 25.0,
+            openskill_sigma: 25.0 / 3.0,
             matches_played: 0,
             wins: 0,
             total_score: 0,
@@ -2014,16 +2019,22 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
     }
     placed.sort_by(|a, b| b.score.cmp(&a.score));
 
-    let config = EloConfig::new();
+    let elo_config = EloConfig::new();
+    let wl_config = WengLinConfig::new();
 
     // Snapshot all ratings before any updates
-    let pre_ratings: Vec<EloRating> = placed
+    let snapshots: Vec<BotStats> = placed.iter().map(|p| get_or_init_stats(ctx, p.bot_id)).collect();
+    let pre_elo: Vec<EloRating> = snapshots
         .iter()
-        .map(|p| EloRating { rating: get_or_init_stats(ctx, p.bot_id).rating as f64 })
+        .map(|s| EloRating { rating: s.rating as f64 })
+        .collect();
+    let pre_wl: Vec<WengLinRating> = snapshots
+        .iter()
+        .map(|s| WengLinRating { rating: s.openskill_mu, uncertainty: s.openskill_sigma })
         .collect();
 
     for (idx, p) in placed.iter().enumerate() {
-        let results: Vec<(EloRating, Outcomes)> = pre_ratings
+        let elo_results: Vec<(EloRating, Outcomes)> = pre_elo
             .iter()
             .enumerate()
             .filter(|(j, _)| *j != idx)
@@ -2039,13 +2050,32 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
             })
             .collect();
 
-        let new_elo = elo_rating_period(&pre_ratings[idx], &results, &config);
+        let wl_results: Vec<(WengLinRating, Outcomes)> = pre_wl
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != idx)
+            .map(|(j, &opp)| {
+                let outcome = if placed[idx].score > placed[j].score {
+                    Outcomes::WIN
+                } else if placed[idx].score < placed[j].score {
+                    Outcomes::LOSS
+                } else {
+                    Outcomes::DRAW
+                };
+                (opp, outcome)
+            })
+            .collect();
+
+        let new_elo = elo_rating_period(&pre_elo[idx], &elo_results, &elo_config);
         let new_rating = (new_elo.rating.round() as i32).max(0);
+        let new_wl = weng_lin_rating_period(&pre_wl[idx], &wl_results, &wl_config);
 
         let existing = get_or_init_stats(ctx, p.bot_id);
         let was_win = idx == 0;
         let stats = BotStats {
             rating: new_rating,
+            openskill_mu: new_wl.rating,
+            openskill_sigma: new_wl.uncertainty,
             matches_played: existing.matches_played + 1,
             wins: existing.wins + if was_win { 1 } else { 0 },
             total_score: existing.total_score + p.score,

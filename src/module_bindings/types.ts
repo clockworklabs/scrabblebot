@@ -106,6 +106,8 @@ export type BotCredential = __Infer<typeof BotCredential>;
 export const BotStats = __t.object("BotStats", {
   botId: __t.u64(),
   rating: __t.i32(),
+  openskillMu: __t.f64(),
+  openskillSigma: __t.f64(),
   matchesPlayed: __t.u32(),
   wins: __t.u32(),
   totalScore: __t.i64(),
