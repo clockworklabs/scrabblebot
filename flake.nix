@@ -8,21 +8,22 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
-    spacetimedb = {
-      url = "github:clockworklabs/SpacetimeDB";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, spacetimedb, ... }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [(import rust-overlay)];
+          # SpacetimeDB is BSL-licensed, which nixpkgs classes as unfree.
+          config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "spacetime" ];
+          overlays = [
+            (import ./overlays/spacetimedb.nix)
+            (import rust-overlay)
+          ];
         };
 
-        inherit (pkgs) lib;
+        inherit (nixpkgs) lib;
 
         # The Rust toolchain that we actually build with.
         rustStable = pkgs.rust-bin.stable.latest.default.override {
@@ -30,22 +31,20 @@
         };
 
         rustNightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.rust-analyzer);
-
-        spacetime = spacetimedb.packages.${system}.default;
       in
-        {
-          devShells.default = pkgs.mkShell {
-            packages = [
-              spacetime
-              rustStable
-              rustNightly
-              pkgs.codex
-              pkgs.python3
-              pkgs.nodejs
-              pkgs.openssl
-              pkgs.pkg-config
-            ];
-          };
-        }
+      {
+        devShells.default = pkgs.mkShell {
+          packages = [
+            pkgs.spacetimedb
+            rustStable
+            rustNightly
+            pkgs.codex
+            pkgs.python3
+            pkgs.nodejs
+            pkgs.openssl
+            pkgs.pkg-config
+          ];
+        };
+      }
     );
 }
