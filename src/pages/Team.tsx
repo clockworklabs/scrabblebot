@@ -4,7 +4,8 @@ import { useConn } from "../connection";
 import { DbConnection } from "../module_bindings";
 import type { BotCredential } from "../module_bindings/types";
 
-const HOST = import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
+const HOST =
+  import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = import.meta.env.VITE_STDB_DB ?? "scrabblebot";
 
 type GenStatus = "idle" | "minting" | "claiming" | "done" | "error";
@@ -24,7 +25,7 @@ export default function Team() {
       </div>
     );
   }
-  const team = conn.db.my_team.iter().next().value;
+  const team = conn.db.myTeam.iter().next().value;
   if (!team) {
     return (
       <>
@@ -33,7 +34,8 @@ export default function Team() {
         </div>
         <section className="panel full">
           <p className="secondary">
-            You're not on a team. <Link to="/team/new">Create or join one →</Link>
+            You're not on a team.{" "}
+            <Link to="/team/new">Create or join one →</Link>
           </p>
         </section>
       </>
@@ -41,15 +43,14 @@ export default function Team() {
   }
 
   const credentials: BotCredential[] = [];
-  for (const c of conn.db.bot_credential.iter()) {
+  for (const c of conn.db.botCredential.iter()) {
     if (c.botId === team.botId) credentials.push(c);
   }
-  credentials.sort(
-    (a, b) =>
-      Number(
-        b.lastSeen.__timestamp_micros_since_unix_epoch__ -
-          a.lastSeen.__timestamp_micros_since_unix_epoch__,
-      ),
+  credentials.sort((a, b) =>
+    Number(
+      b.lastSeen.__timestamp_micros_since_unix_epoch__ -
+        a.lastSeen.__timestamp_micros_since_unix_epoch__,
+    ),
   );
 
   // Mint a nonce → open a fresh anon connection → redeem it →
@@ -62,14 +63,14 @@ export default function Team() {
     setGenIdentity(null);
 
     const before = new Set<string>();
-    for (const n of conn.db.my_nonces.iter()) before.add(n.code);
+    for (const n of conn.db.myNonces.iter()) before.add(n.code);
     conn.reducers.mintCredentialNonce({});
 
     // Wait briefly for the nonce row to land in my_nonces.
     let code: string | null = null;
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 100));
-      for (const n of conn.db.my_nonces.iter()) {
+      for (const n of conn.db.myNonces.iter()) {
         if (n.botId === team!.botId && !before.has(n.code)) {
           code = n.code;
           break;
@@ -96,14 +97,12 @@ export default function Team() {
             c.reducers.claimCredential({ code: code! });
             // Give the credential a moment to land, then verify.
             setTimeout(() => {
-              const ok = !!c.db.bot_credential.identity.find(id);
+              const ok = !!c.db.botCredential.identity.find(id);
               if (ok) {
                 setGen("done");
               } else {
                 setGen("error");
-                setGenError(
-                  "Claim didn't take. Refresh and try again?",
-                );
+                setGenError("Claim didn't take. Refresh and try again?");
               }
               try {
                 c.disconnect();
@@ -140,8 +139,9 @@ export default function Team() {
       <section className="panel full">
         <h2>Generate a token for your bot</h2>
         <p>
-          One click and you'll get a SpacetimeDB token bound to a new credential for your
-          bot. Plug it into your bot's <code>withToken(...)</code> call and you're done.
+          One click and you'll get a SpacetimeDB token bound to a new credential
+          for your bot. Plug it into your bot's <code>withToken(...)</code> call
+          and you're done.
         </p>
 
         {gen === "idle" && (
@@ -150,10 +150,14 @@ export default function Team() {
           </button>
         )}
         {gen === "minting" && <div className="secondary">Minting nonce…</div>}
-        {gen === "claiming" && <div className="secondary">Claiming credential…</div>}
+        {gen === "claiming" && (
+          <div className="secondary">Claiming credential…</div>
+        )}
         {gen === "error" && (
           <>
-            <div style={{ color: "var(--warn)", marginBottom: 8 }}>{genError}</div>
+            <div style={{ color: "var(--warn)", marginBottom: 8 }}>
+              {genError}
+            </div>
             <button className="button" onClick={() => setGen("idle")}>
               Try again
             </button>
@@ -172,7 +176,9 @@ export default function Team() {
             <p className="secondary" style={{ marginTop: 12 }}>
               Use in your bot:
               <br />
-              <code>DbConnection.builder().withToken("&lt;the token above&gt;")...</code>
+              <code>
+                DbConnection.builder().withToken("&lt;the token above&gt;")...
+              </code>
             </p>
             <p className="secondary">
               Or with the starter kit:
@@ -217,7 +223,8 @@ export default function Team() {
                 <td>{c.connected ? "● yes" : "○ no"}</td>
                 <td className="secondary">
                   {new Date(
-                    Number(c.lastSeen.__timestamp_micros_since_unix_epoch__) / 1000,
+                    Number(c.lastSeen.__timestamp_micros_since_unix_epoch__) /
+                      1000,
                   ).toLocaleString()}
                 </td>
               </tr>
@@ -230,7 +237,6 @@ export default function Team() {
           </div>
         )}
       </section>
-
     </>
   );
 }

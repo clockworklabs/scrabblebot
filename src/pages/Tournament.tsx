@@ -26,7 +26,8 @@ export default function Tournament() {
         </div>
         <section className="panel full">
           <p className="secondary">
-            No tournament has been started. Head to <Link to="/admin">Admin</Link> to launch one.
+            No tournament has been started. Head to{" "}
+            <Link to="/admin">Admin</Link> to launch one.
           </p>
         </section>
       </>
@@ -38,10 +39,10 @@ export default function Tournament() {
   const tmatches: TournamentMatch[] = [];
   if (conn) {
     for (const b of conn.db.bot.iter()) bots.push(b);
-    for (const e of conn.db.tournament_entry.iter()) {
+    for (const e of conn.db.tournamentEntry.iter()) {
       if (e.tournamentId === current.id) entries.push(e);
     }
-    for (const m of conn.db.tournament_match.iter()) {
+    for (const m of conn.db.tournamentMatch.iter()) {
       if (m.tournamentId === current.id) tmatches.push(m);
     }
   }
@@ -66,7 +67,8 @@ export default function Tournament() {
       <div className="header full">
         <h1>Tournament #{String(current.id)}</h1>
         <span className="status">
-          {current.status.tag} · {entries.length} entries · {current.auctionType.tag}
+          {current.status.tag} · {entries.length} entries ·{" "}
+          {current.auctionType.tag}
         </span>
       </div>
 
@@ -104,16 +106,18 @@ export default function Tournament() {
                 {phase} round {round}
               </div>
               {group.map((tm) => {
-                const m = conn?.db.match_state.id.find(tm.matchId);
+                const m = conn?.db.matchState.id.find(tm.matchId);
                 const participants = conn
-                  ? Array.from(conn.db.match_participant.iter())
+                  ? Array.from(conn.db.matchParticipant.iter())
                       .filter((p) => p.matchId === tm.matchId)
                       .sort((a, b) => Number(b.score - a.score))
                   : [];
                 return (
                   <div key={String(tm.id)} className="row">
                     <div>
-                      <Link to={`/matches/${tm.matchId}`}>Match #{String(tm.matchId)}</Link>
+                      <Link to={`/matches/${tm.matchId}`}>
+                        Match #{String(tm.matchId)}
+                      </Link>
                       <div className="secondary">
                         {m?.status.tag ?? "?"} · {participants.length} bots
                       </div>

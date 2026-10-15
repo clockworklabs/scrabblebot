@@ -66,13 +66,16 @@ const WORD_RETRY_MS = 500;
 
 function resolveMyBotId(conn: DbConnection): bigint | null {
   if (!myIdentity) return null;
-  const cred = conn.db.bot_credential.identity.find(myIdentity);
+  const cred = conn.db.botCredential.identity.find(myIdentity);
   return cred ? cred.botId : null;
 }
 
-function rackForMatch(conn: DbConnection, matchId: bigint): Map<string, number> {
+function rackForMatch(
+  conn: DbConnection,
+  matchId: bigint,
+): Map<string, number> {
   const rack = new Map<string, number>();
-  for (const h of conn.db.my_rack.iter()) {
+  for (const h of conn.db.myRack.iter()) {
     if (h.matchId !== matchId) continue;
     rack.set(h.letter, (rack.get(h.letter) ?? 0) + h.count);
   }
@@ -84,7 +87,7 @@ function participantForMatch(
   matchId: bigint,
 ): { balance: number; score: number } | null {
   if (myBotId === null) return null;
-  for (const p of conn.db.match_participant.iter()) {
+  for (const p of conn.db.matchParticipant.iter()) {
     if (p.matchId !== matchId) continue;
     if (p.botId !== myBotId) continue;
     return { balance: Number(p.balance), score: Number(p.score) };
@@ -92,7 +95,12 @@ function participantForMatch(
   return null;
 }
 
-function tryBid(conn: DbConnection, auctionId: bigint, matchId: bigint, letter: string) {
+function tryBid(
+  conn: DbConnection,
+  auctionId: bigint,
+  matchId: bigint,
+  letter: string,
+) {
   if (myBotId === null) return;
   const key = `${matchId}:${auctionId}`;
   if (bidsByAuction.has(key)) return;
@@ -114,7 +122,7 @@ function tryBid(conn: DbConnection, auctionId: bigint, matchId: bigint, letter: 
 function tryPlayWord(conn: DbConnection) {
   if (myBotId === null) return;
   const matches = new Set<bigint>();
-  for (const p of conn.db.match_participant.iter()) {
+  for (const p of conn.db.matchParticipant.iter()) {
     if (p.botId === myBotId) matches.add(p.matchId);
   }
   const now = Date.now();
@@ -173,7 +181,9 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
       }
 
       const bot = conn.db.bot.id.find(myBotId);
-      console.log(`[${BOT_NAME}] acting as bot '${bot?.name ?? "?"}' (id ${myBotId})`);
+      console.log(
+        `[${BOT_NAME}] acting as bot '${bot?.name ?? "?"}' (id ${myBotId})`,
+      );
       bootstrapActivity(conn);
     })
     .subscribeToAllTables();
@@ -181,12 +191,12 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   conn.db.auction.onInsert((_ctx: EventContext, a) => {
     if (a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter);
   });
-  conn.db.my_rack.onInsert(() => tryPlayWord(conn));
-  conn.db.my_rack.onUpdate(() => tryPlayWord(conn));
-  conn.db.bot_credential.onInsert(() => {
+  conn.db.myRack.onInsert(() => tryPlayWord(conn));
+  conn.db.myRack.onUpdate(() => tryPlayWord(conn));
+  conn.db.botCredential.onInsert(() => {
     if (myBotId === null) myBotId = resolveMyBotId(conn);
   });
-  conn.db.auction_result.onInsert((_ctx, r) => {
+  conn.db.auctionResult.onInsert((_ctx, r) => {
     if (myBotId === null) return;
     const winner =
       r.winnerBotId !== undefined && r.winnerBotId !== null
@@ -198,10 +208,10 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   });
 
   // When a match this bot was in ends, hop back into the lobby.
-  conn.db.match_state.onUpdate((_ctx, old, neu) => {
+  conn.db.matchState.onUpdate((_ctx, old, neu) => {
     if (myBotId === null) return;
     if (old.status.tag !== "Ended" && neu.status.tag === "Ended") {
-      const wasIn = Array.from(conn.db.match_participant.iter()).some(
+      const wasIn = Array.from(conn.db.matchParticipant.iter()).some(
         (p) => p.matchId === neu.id && p.botId === myBotId,
       );
       if (wasIn) {
@@ -214,9 +224,9 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
 
 function joinLobby(conn: DbConnection) {
   if (myBotId === null) return;
-  const inRunning = Array.from(conn.db.match_participant.iter()).some((p) => {
+  const inRunning = Array.from(conn.db.matchParticipant.iter()).some((p) => {
     if (p.botId !== myBotId) return false;
-    const m = conn.db.match_state.id.find(p.matchId);
+    const m = conn.db.matchState.id.find(p.matchId);
     return m?.status.tag === "Running";
   });
   if (inRunning) return;
@@ -225,7 +235,7 @@ function joinLobby(conn: DbConnection) {
   );
   const alreadyIn =
     openLobby !== undefined &&
-    Array.from(conn.db.lobby_member.iter()).some(
+    Array.from(conn.db.lobbyMember.iter()).some(
       (lm) => lm.lobbyId === openLobby.id && lm.botId === myBotId,
     );
   if (alreadyIn) return;

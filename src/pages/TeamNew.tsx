@@ -16,7 +16,8 @@ export default function TeamNew() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const link = conn && identity ? conn.db.human_link.web_identity.find(identity) : null;
+  const link =
+    conn && identity ? conn.db.humanLink.web_identity.find(identity) : null;
   const linked = !!link;
 
   const allTeams: Team[] = [];
@@ -31,12 +32,17 @@ export default function TeamNew() {
     }
     setBusy(true);
     setError(null);
-    conn.reducers.createTeam({ teamName: teamName.trim(), botName: botName.trim() });
+    conn.reducers.createTeam({
+      teamName: teamName.trim(),
+      botName: botName.trim(),
+    });
     setTimeout(() => {
-      const team = conn.db.my_team.iter().next().value;
+      const team = conn.db.myTeam.iter().next().value;
       if (team) navigate("/team");
       else {
-        setError("Failed to create team — name taken, or you're already on one?");
+        setError(
+          "Failed to create team — name taken, or you're already on one?",
+        );
         setBusy(false);
       }
     }, 800);
@@ -52,7 +58,7 @@ export default function TeamNew() {
     setError(null);
     conn.reducers.joinTeam({ teamName: joinName.trim() });
     setTimeout(() => {
-      const team = conn.db.my_team.iter().next().value;
+      const team = conn.db.myTeam.iter().next().value;
       if (team) navigate("/team");
       else {
         setError(
@@ -71,12 +77,17 @@ export default function TeamNew() {
         </div>
         <section className="panel full">
           <p>
-            Your team is bound to your spacetimedb.com identity so you can manage it
-            from either the website or the CLI. Visit the{" "}
-            <Link to="/account">Account page</Link> for one-time linking instructions.
+            Your team is bound to your spacetimedb.com identity so you can
+            manage it from either the website or the CLI. Visit the{" "}
+            <Link to="/account">Account page</Link> for one-time linking
+            instructions.
           </p>
           <div style={{ marginTop: 12 }}>
-            <Link to="/account" className="button" style={{ display: "inline-block", textDecoration: "none" }}>
+            <Link
+              to="/account"
+              className="button"
+              style={{ display: "inline-block", textDecoration: "none" }}
+            >
               Go to /account →
             </Link>
           </div>
@@ -97,7 +108,9 @@ export default function TeamNew() {
               setError(null);
             }}
           >
-            {mode === "create" ? "Join an existing team →" : "← Create new instead"}
+            {mode === "create"
+              ? "Join an existing team →"
+              : "← Create new instead"}
           </button>
         </span>
       </div>
@@ -106,8 +119,9 @@ export default function TeamNew() {
         {mode === "create" ? (
           <>
             <p>
-              A team is a group of humans who share ownership of one bot. You'll be the
-              team's Owner. After creating, you'll mint a credential to plug into your bot.
+              A team is a group of humans who share ownership of one bot. You'll
+              be the team's Owner. After creating, you'll mint a credential to
+              plug into your bot.
             </p>
             <div style={rowStyle}>
               <label>Team name</label>
@@ -129,9 +143,15 @@ export default function TeamNew() {
                 placeholder="e.g. alice"
               />
             </div>
-            {error && <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>}
+            {error && (
+              <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>
+            )}
             <div style={{ marginTop: 16 }}>
-              <button className="button" onClick={create} disabled={!linked || busy}>
+              <button
+                className="button"
+                onClick={create}
+                disabled={!linked || busy}
+              >
                 {busy ? "Creating…" : "Create team"}
               </button>
             </div>
@@ -139,8 +159,8 @@ export default function TeamNew() {
         ) : (
           <>
             <p>
-              Joining an existing team makes you a Member. You'll be able to mint
-              credentials for the team's bot and play with it.
+              Joining an existing team makes you a Member. You'll be able to
+              mint credentials for the team's bot and play with it.
             </p>
             <div style={rowStyle}>
               <label>Team name</label>
@@ -158,9 +178,15 @@ export default function TeamNew() {
                 ))}
               </datalist>
             </div>
-            {error && <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>}
+            {error && (
+              <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>
+            )}
             <div style={{ marginTop: 16 }}>
-              <button className="button" onClick={join} disabled={!linked || busy}>
+              <button
+                className="button"
+                onClick={join}
+                disabled={!linked || busy}
+              >
                 {busy ? "Joining…" : "Join team"}
               </button>
             </div>

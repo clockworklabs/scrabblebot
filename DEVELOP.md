@@ -272,10 +272,18 @@ place on maincloud (preserving data): `spacetime rename <db-identity-hex>
 
 ### Versions matter
 
-`spacetimedb` Cargo crate, npm `spacetimedb`, and the `spacetime` CLI
-must all be the same major version (currently 2.2.0). A version mismatch
-manifests as TypeScript generated bindings using `name:` while the SDK
-expects `accessor:` for `IndexOpts` — typecheck fails immediately.
+`spacetimedb` Cargo crate, npm `spacetimedb` (web app and bot-starter),
+and the `spacetime` CLI should all be on the same version — currently
+2.12.0. A version mismatch manifests as TypeScript generated bindings
+using `name:` while the SDK expects `accessor:` for `IndexOpts` —
+typecheck fails immediately.
+
+Since 2.7, generated TypeScript handles are camelCase
+(`conn.db.matchState`, `conn.db.myRack`) even though the module's
+accessors and SQL table names stay snake_case (`match_state`). Use the
+camelCase handles in client code; the snake_case ones are deprecated
+aliases due to be removed in the next major version. Index accessors
+(`.web_identity`, `.identity`) are not renamed.
 
 ## Deployment
 

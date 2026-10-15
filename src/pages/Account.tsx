@@ -19,9 +19,9 @@ export default function Account() {
   }
 
   const webHex = identity.toHexString();
-  const link = conn.db.human_link.web_identity.find(identity);
+  const link = conn.db.humanLink.web_identity.find(identity);
   const isLinked = !!link;
-  const team = conn.db.my_team.iter().next().value;
+  const team = conn.db.myTeam.iter().next().value;
 
   return (
     <>
@@ -42,15 +42,16 @@ export default function Account() {
         <section className="panel full">
           <h2>Link your spacetimedb.com account</h2>
           <p>
-            Connect this browser to your <code>spacetime login</code> identity so you can
-            manage a team and bot from either the website or the command line.
+            Connect this browser to your <code>spacetime login</code> identity
+            so you can manage a team and bot from either the website or the
+            command line.
           </p>
           <pre style={preStyle}>
             spacetime call {dbName} connect_id '["0x{webHex}"]'
           </pre>
           <p className="secondary">
-            Run that in any terminal where <code>spacetime login</code> is configured. Then
-            refresh this page.
+            Run that in any terminal where <code>spacetime login</code> is
+            configured. Then refresh this page.
           </p>
         </section>
       )}
@@ -59,9 +60,15 @@ export default function Account() {
         <>
           <section className="panel">
             <h2>Linked human identity</h2>
-            <code style={{ wordBreak: "break-all" }}>{link!.humanIdentity.toHexString()}</code>
+            <code style={{ wordBreak: "break-all" }}>
+              {link!.humanIdentity.toHexString()}
+            </code>
             <div className="secondary" style={{ marginTop: 8 }}>
-              Linked at {new Date(Number(link!.linkedAt.__timestamp_micros_since_unix_epoch__) / 1000).toLocaleString()}
+              Linked at{" "}
+              {new Date(
+                Number(link!.linkedAt.__timestamp_micros_since_unix_epoch__) /
+                  1000,
+              ).toLocaleString()}
             </div>
           </section>
 
@@ -73,7 +80,9 @@ export default function Account() {
                   <span>
                     <Link to="/team">{team.teamName}</Link>
                   </span>
-                  <span className="secondary">{team.role.tag.toLowerCase()}</span>
+                  <span className="secondary">
+                    {team.role.tag.toLowerCase()}
+                  </span>
                 </div>
                 <div className="row">
                   <span>Bot</span>
@@ -86,7 +95,8 @@ export default function Account() {
               </>
             ) : (
               <p className="secondary">
-                You're not on a team yet. <Link to="/team/new">Create one →</Link>
+                You're not on a team yet.{" "}
+                <Link to="/team/new">Create one →</Link>
               </p>
             )}
           </section>

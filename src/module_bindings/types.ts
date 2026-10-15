@@ -233,6 +233,13 @@ export const MyTeam = __t.object("MyTeam", {
 });
 export type MyTeam = __Infer<typeof MyTeam>;
 
+export const NonceExpirySchedule = __t.object("NonceExpirySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  nonceId: __t.u64(),
+});
+export type NonceExpirySchedule = __Infer<typeof NonceExpirySchedule>;
+
 export const PendingBid = __t.object("PendingBid", {
   id: __t.u64(),
   auctionId: __t.u64(),
@@ -333,4 +340,3 @@ export const WordPlay = __t.object("WordPlay", {
   playedAt: __t.timestamp(),
 });
 export type WordPlay = __Infer<typeof WordPlay>;
-

@@ -9,7 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { version = "2.2.0" }
+spacetimedb = { version = "2.12.0" }
 log = "0.4"
 rand = "0.8"
 skillratings = "0.29.0"

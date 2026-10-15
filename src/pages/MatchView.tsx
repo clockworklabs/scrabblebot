@@ -21,7 +21,7 @@ export default function MatchView() {
       </div>
     );
   }
-  const m = conn.db.match_state.id.find(matchId);
+  const m = conn.db.matchState.id.find(matchId);
   if (!m) {
     return (
       <div className="header full">
@@ -34,7 +34,7 @@ export default function MatchView() {
   for (const b of conn.db.bot.iter()) bots.push(b);
 
   const participants: MatchParticipant[] = [];
-  for (const p of conn.db.match_participant.iter()) {
+  for (const p of conn.db.matchParticipant.iter()) {
     if (p.matchId === matchId) participants.push(p);
   }
   participants.sort((a, b) => Number(b.score - a.score));
@@ -48,13 +48,13 @@ export default function MatchView() {
   }
 
   const allResults: AuctionResult[] = [];
-  for (const r of conn.db.auction_result.iter()) {
+  for (const r of conn.db.auctionResult.iter()) {
     if (r.matchId === matchId) allResults.push(r);
   }
   allResults.sort((a, b) => Number(a.auctionId - b.auctionId));
 
   const allPlays: WordPlay[] = [];
-  for (const p of conn.db.word_play.iter()) {
+  for (const p of conn.db.wordPlay.iter()) {
     if (p.matchId === matchId) allPlays.push(p);
   }
   allPlays.sort((a, b) => Number(a.id - b.id));
@@ -64,12 +64,12 @@ export default function MatchView() {
   // ends, on_match_ended moves the rows to the public
   // `auction_top_bid_archive` table for historical replay.
   const topBidByAuction = new Map<string, bigint>();
-  for (const t of conn.db.visible_auction_top_bids.iter()) {
+  for (const t of conn.db.visibleAuctionTopBids.iter()) {
     if (t.matchId === matchId) {
       topBidByAuction.set(String(t.auctionId), t.topBid);
     }
   }
-  for (const t of conn.db.auction_top_bid_archive.iter()) {
+  for (const t of conn.db.auctionTopBidArchive.iter()) {
     if (t.matchId === matchId) {
       topBidByAuction.set(String(t.auctionId), t.topBid);
     }
@@ -87,8 +87,8 @@ export default function MatchView() {
         <h1>
           Match #{String(m.id)}{" "}
           <span className="status">
-            · {m.status.tag.toLowerCase()} · {m.auctionType.tag.toLowerCase()} · round{" "}
-            {m.currentRound} · bag {m.bagTotal} left
+            · {m.status.tag.toLowerCase()} · {m.auctionType.tag.toLowerCase()} ·
+            round {m.currentRound} · bag {m.bagTotal} left
           </span>
         </h1>
         <Link to="/matches">← all matches</Link>
@@ -135,7 +135,9 @@ export default function MatchView() {
                         ? botName(bots, r.winnerBotId)
                         : "no bid"}
                     </td>
-                    <td className="num">{topBid !== undefined ? String(topBid) : "—"}</td>
+                    <td className="num">
+                      {topBid !== undefined ? String(topBid) : "—"}
+                    </td>
                     <td className="num">{String(r.paid)}</td>
                   </tr>
                 );
@@ -159,7 +161,9 @@ export default function MatchView() {
                       {t}
                     </span>
                   ))}
-                  {tiles.length === 0 && <span className="secondary">(no letters yet)</span>}
+                  {tiles.length === 0 && (
+                    <span className="secondary">(no letters yet)</span>
+                  )}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>

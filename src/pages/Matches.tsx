@@ -9,7 +9,7 @@ export default function Matches() {
   const matches: Match[] = [];
   const bots: Bot[] = [];
   if (conn) {
-    for (const m of conn.db.match_state.iter()) matches.push(m);
+    for (const m of conn.db.matchState.iter()) matches.push(m);
     for (const b of conn.db.bot.iter()) bots.push(b);
   }
   matches.sort((a, b) => Number(b.id - a.id));
@@ -37,9 +37,13 @@ export default function Matches() {
           <tbody>
             {matches.map((m) => {
               const participants = conn
-                ? Array.from(conn.db.match_participant.iter()).filter((p) => p.matchId === m.id)
+                ? Array.from(conn.db.matchParticipant.iter()).filter(
+                    (p) => p.matchId === m.id,
+                  )
                 : [];
-              const top = participants.sort((a, b) => Number(b.score - a.score))[0];
+              const top = participants.sort((a, b) =>
+                Number(b.score - a.score),
+              )[0];
               return (
                 <tr key={String(m.id)}>
                   <td>
@@ -51,7 +55,9 @@ export default function Matches() {
                   <td>{m.bagTotal}</td>
                   <td>{participants.length}</td>
                   <td>
-                    {top ? `${botName(bots, top.botId)} (${String(top.score)})` : "—"}
+                    {top
+                      ? `${botName(bots, top.botId)} (${String(top.score)})`
+                      : "—"}
                   </td>
                 </tr>
               );

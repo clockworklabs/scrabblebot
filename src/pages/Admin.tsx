@@ -24,8 +24,8 @@ export default function Admin() {
 
   const admins: AdminRow[] = [];
   for (const a of conn.db.admin.iter()) admins.push(a);
-  const myAdmin = conn.db.my_admin.iter().next().value;
-  const link = conn.db.human_link.web_identity.find(identity);
+  const myAdmin = conn.db.myAdmin.iter().next().value;
+  const link = conn.db.humanLink.web_identity.find(identity);
   const myHuman = link?.humanIdentity;
   const noAdmins = admins.length === 0;
 
@@ -39,13 +39,14 @@ export default function Admin() {
         <section className="panel full">
           <h2>Claim first admin</h2>
           <p>
-            No admins are configured. Whoever clicks the button below becomes the
-            first admin and can then add others.
+            No admins are configured. Whoever clicks the button below becomes
+            the first admin and can then add others.
           </p>
           {!myHuman && (
             <p style={{ color: "var(--warn)" }}>
-              You need to <a href="/account">link your spacetimedb.com identity</a>{" "}
-              first so the admin role is bound to it.
+              You need to{" "}
+              <a href="/account">link your spacetimedb.com identity</a> first so
+              the admin role is bound to it.
             </p>
           )}
           <button
@@ -100,7 +101,9 @@ export default function Admin() {
     setAdminError(null);
     const hex = newAdminHex.trim().replace(/^0x/, "");
     if (hex.length !== 64) {
-      setAdminError("Identity should be a 64-char hex string (optional 0x prefix).");
+      setAdminError(
+        "Identity should be a 64-char hex string (optional 0x prefix).",
+      );
       return;
     }
     try {
@@ -108,7 +111,9 @@ export default function Admin() {
       conn.reducers.addAdmin({ humanIdentity: id });
       setNewAdminHex("");
     } catch (e) {
-      setAdminError(`Bad identity: ${e instanceof Error ? e.message : String(e)}`);
+      setAdminError(
+        `Bad identity: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -147,7 +152,8 @@ export default function Admin() {
                   </td>
                   <td className="secondary">
                     {new Date(
-                      Number(a.addedAt.__timestamp_micros_since_unix_epoch__) / 1000,
+                      Number(a.addedAt.__timestamp_micros_since_unix_epoch__) /
+                        1000,
                     ).toLocaleString()}
                   </td>
                   <td>
@@ -191,7 +197,9 @@ export default function Admin() {
             </button>
           </div>
           {adminError && (
-            <div style={{ color: "var(--warn)", marginTop: 8 }}>{adminError}</div>
+            <div style={{ color: "var(--warn)", marginTop: 8 }}>
+              {adminError}
+            </div>
           )}
         </div>
       </section>
@@ -199,8 +207,8 @@ export default function Admin() {
       <section className="panel full">
         <h2>Run a tournament</h2>
         <p className="secondary">
-          Swiss rounds, then a single-elimination bracket cut to the top-N. Uses every
-          currently-registered bot.
+          Swiss rounds, then a single-elimination bracket cut to the top-N. Uses
+          every currently-registered bot.
         </p>
         <div className="row">
           <span>Auction type</span>

@@ -12,10 +12,10 @@ export default function Home() {
   const lobbies: Lobby[] = [];
   const allLobbyMembers: LobbyMember[] = [];
   if (conn) {
-    for (const m of conn.db.match_state.iter()) matches.push(m);
+    for (const m of conn.db.matchState.iter()) matches.push(m);
     for (const b of conn.db.bot.iter()) bots.push(b);
     for (const l of conn.db.lobby.iter()) lobbies.push(l);
-    for (const lm of conn.db.lobby_member.iter()) allLobbyMembers.push(lm);
+    for (const lm of conn.db.lobbyMember.iter()) allLobbyMembers.push(lm);
   }
   matches.sort((a, b) => Number(b.id - a.id));
   const running = matches.filter((m) => m.status.tag === "Running");
@@ -41,7 +41,8 @@ export default function Home() {
       <div className="header full">
         <h1>ScrabbleBot</h1>
         <span className="status">
-          {bots.length} bots · {running.length} running · {ended.length} completed
+          {bots.length} bots · {running.length} running · {ended.length}{" "}
+          completed
         </span>
       </div>
 
@@ -88,7 +89,10 @@ export default function Home() {
                 );
               })}
               {Array.from({
-                length: Math.max(0, openLobby.maxSize - openLobbyMembers.length),
+                length: Math.max(
+                  0,
+                  openLobby.maxSize - openLobbyMembers.length,
+                ),
               }).map((_, i) => (
                 <span
                   key={`empty-${i}`}
@@ -119,27 +123,31 @@ export default function Home() {
       <section className="panel full">
         <h2>What is this?</h2>
         <p>
-          ScrabbleBot is a Scrabble-style auction game for AI bots. Each round, one letter is revealed
-          and bots have <b>1 second</b> to submit a sealed bid. The winner pays (depending on the
-          auction type) and adds the letter to their rack. Bots play words from their collected
-          letters to earn currency, which they use to bid on future tiles.
+          ScrabbleBot is a Scrabble-style auction game for AI bots. Each round,
+          one letter is revealed and bots have <b>1 second</b> to submit a
+          sealed bid. The winner pays (depending on the auction type) and adds
+          the letter to their rack. Bots play words from their collected letters
+          to earn currency, which they use to bid on future tiles.
         </p>
         <p style={{ marginTop: 8 }}>
-          <Link to="/team/new">Register a bot →</Link>{" "}&nbsp;
-          <Link to="/docs">How to write a bot →</Link>{" "}&nbsp;
+          <Link to="/team/new">Register a bot →</Link> &nbsp;
+          <Link to="/docs">How to write a bot →</Link> &nbsp;
           <Link to="/leaderboard">Leaderboard →</Link>
         </p>
       </section>
 
       <section className="panel">
         <h2>Running matches</h2>
-        {running.length === 0 && <div className="secondary">None right now.</div>}
+        {running.length === 0 && (
+          <div className="secondary">None right now.</div>
+        )}
         {running.slice(0, 8).map((m) => (
           <div key={String(m.id)} className="row">
             <div>
               <Link to={`/matches/${m.id}`}>Match #{String(m.id)}</Link>
               <div className="secondary">
-                round {m.currentRound} · bag {m.bagTotal} · {m.auctionType.tag.toLowerCase()}
+                round {m.currentRound} · bag {m.bagTotal} ·{" "}
+                {m.auctionType.tag.toLowerCase()}
               </div>
             </div>
           </div>
@@ -148,7 +156,9 @@ export default function Home() {
 
       <section className="panel">
         <h2>Recently completed</h2>
-        {ended.length === 0 && <div className="secondary">No completed matches yet.</div>}
+        {ended.length === 0 && (
+          <div className="secondary">No completed matches yet.</div>
+        )}
         {ended.slice(0, 8).map((m) => (
           <div key={String(m.id)} className="row">
             <div>

@@ -15,16 +15,16 @@ function Nav() {
   const { conn, identity, connected, version, dbName } = useConn();
   void version;
   const link =
-    conn && identity ? conn.db.human_link.web_identity.find(identity) : null;
+    conn && identity ? conn.db.humanLink.web_identity.find(identity) : null;
   const linked = !!link;
-  const humanShort = link
-    ? link.humanIdentity.toHexString().slice(0, 8)
-    : null;
-  const isAdmin = !!conn?.db.my_admin.iter().next().value;
+  const humanShort = link ? link.humanIdentity.toHexString().slice(0, 8) : null;
+  const isAdmin = !!conn?.db.myAdmin.iter().next().value;
 
   return (
     <nav className="nav">
-      <Link to="/" className="brand">ScrabbleBot</Link>
+      <Link to="/" className="brand">
+        ScrabbleBot
+      </Link>
       <Link to="/matches">Matches</Link>
       <Link to="/leaderboard">Leaderboard</Link>
       <Link to="/tournament">Tournament</Link>
@@ -61,7 +61,10 @@ export default function App() {
             <Route path="/account" element={<Account />} />
             <Route path="/team" element={<Team />} />
             <Route path="/team/new" element={<TeamNew />} />
-            <Route path="/register" element={<Navigate to="/team/new" replace />} />
+            <Route
+              path="/register"
+              element={<Navigate to="/team/new" replace />}
+            />
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/docs" element={<Docs />} />
             <Route path="/tournament" element={<Tournament />} />

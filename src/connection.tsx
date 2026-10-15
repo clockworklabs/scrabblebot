@@ -4,7 +4,8 @@ import { useAuth } from "react-oidc-context";
 import { DbConnection } from "./module_bindings";
 import type { Identity } from "spacetimedb";
 
-const HOST = import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
+const HOST =
+  import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = import.meta.env.VITE_STDB_DB ?? "scrabblebot";
 
 interface Ctx {
@@ -40,7 +41,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   //   - signed out: use an anonymous SpacetimeDB-minted token (cached in
   //                 localStorage so identity persists across reloads).
   const idToken = auth.isAuthenticated ? auth.user?.id_token : undefined;
-  const authKey = auth.isLoading ? "loading" : idToken ?? "anon";
+  const authKey = auth.isLoading ? "loading" : (idToken ?? "anon");
 
   useEffect(() => {
     if (auth.isLoading) return;
@@ -52,14 +53,19 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       setVersion(versionRef.current);
     };
 
-    const token = idToken ?? localStorage.getItem("scrabblebot-token") ?? undefined;
+    const token =
+      idToken ?? localStorage.getItem("scrabblebot-token") ?? undefined;
     const c = DbConnection.builder()
       .withUri(HOST)
       .withDatabaseName(DB_NAME)
       .withToken(token)
       .onConnect((c, id, freshToken) => {
         if (cancelled) {
-          try { c.disconnect(); } catch { /* */ }
+          try {
+            c.disconnect();
+          } catch {
+            /* */
+          }
           return;
         }
         // Only cache anonymous tokens — never the OIDC one (it's short-lived
@@ -70,27 +76,27 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         c.subscriptionBuilder().onApplied(bump).subscribeToAllTables();
         for (const t of [
           c.db.bot,
-          c.db.bot_stats,
-          c.db.match_state,
-          c.db.match_participant,
+          c.db.botStats,
+          c.db.matchState,
+          c.db.matchParticipant,
           c.db.auction,
-          c.db.auction_result,
-          c.db.word_play,
+          c.db.auctionResult,
+          c.db.wordPlay,
           c.db.lobby,
-          c.db.lobby_member,
+          c.db.lobbyMember,
           c.db.tournament,
-          c.db.tournament_entry,
-          c.db.tournament_match,
+          c.db.tournamentEntry,
+          c.db.tournamentMatch,
           c.db.team,
-          c.db.team_member,
-          c.db.bot_credential,
-          c.db.human_link,
-          c.db.my_team,
-          c.db.my_nonces,
+          c.db.teamMember,
+          c.db.botCredential,
+          c.db.humanLink,
+          c.db.myTeam,
+          c.db.myNonces,
           c.db.admin,
-          c.db.my_admin,
-          c.db.visible_auction_top_bids,
-          c.db.auction_top_bid_archive,
+          c.db.myAdmin,
+          c.db.visibleAuctionTopBids,
+          c.db.auctionTopBidArchive,
         ]) {
           const anyT = t as unknown as {
             onInsert: (cb: () => void) => void;
@@ -111,7 +117,11 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       setConnected(false);
-      try { active?.disconnect(); } catch { /* */ }
+      try {
+        active?.disconnect();
+      } catch {
+        /* */
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authKey]);

@@ -1,7 +1,14 @@
 import type { DbConnection } from "./module_bindings";
-import type { AuctionResult, Bot, MatchParticipant, WordPlay } from "./module_bindings/types";
+import type {
+  AuctionResult,
+  Bot,
+  MatchParticipant,
+  WordPlay,
+} from "./module_bindings/types";
 
-export function fmtTimestamp(ts: { __timestamp_micros_since_unix_epoch__: bigint }): number {
+export function fmtTimestamp(ts: {
+  __timestamp_micros_since_unix_epoch__: bigint;
+}): number {
   return Number(ts.__timestamp_micros_since_unix_epoch__) / 1000;
 }
 
@@ -30,7 +37,10 @@ export function reconstructRacks(
   return racks;
 }
 
-export function rackTiles(racks: Map<string, Map<string, number>>, botId: bigint): string[] {
+export function rackTiles(
+  racks: Map<string, Map<string, number>>,
+  botId: bigint,
+): string[] {
   const rack = racks.get(String(botId));
   if (!rack) return [];
   const tiles: string[] = [];
@@ -59,7 +69,7 @@ export function readParticipantsForMatch(
   matchId: bigint,
 ): MatchParticipant[] {
   const out: MatchParticipant[] = [];
-  for (const p of conn.db.match_participant.iter()) {
+  for (const p of conn.db.matchParticipant.iter()) {
     if (p.matchId === matchId) out.push(p);
   }
   out.sort((a, b) => Number(b.score - a.score));
@@ -70,7 +80,7 @@ export function isBotCredentialConnected(
   conn: DbConnection,
   botId: bigint,
 ): boolean {
-  for (const c of conn.db.bot_credential.iter()) {
+  for (const c of conn.db.botCredential.iter()) {
     if (c.botId === botId && c.connected) return true;
   }
   return false;

@@ -9,7 +9,7 @@ export default function Leaderboard() {
   const stats: BotStats[] = [];
   if (conn) {
     for (const b of conn.db.bot.iter()) bots.push(b);
-    for (const s of conn.db.bot_stats.iter()) stats.push(s);
+    for (const s of conn.db.botStats.iter()) stats.push(s);
   }
   stats.sort((a, b) => b.rating - a.rating);
 

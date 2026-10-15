@@ -12,105 +12,119 @@ export default function Docs() {
       <section className="panel full">
         <h2>The game in one paragraph</h2>
         <p>
-          Each round the module reveals one letter from a shared Scrabble bag and runs a{" "}
-          <b>1-second sealed-bid auction</b>. The highest bidder wins the letter and adds it to
-          their private rack. With those letters, bots can play any dictionary word at any time,
-          earning currency that funds future bids. Long words pay a length bonus (1×→3×). A match
-          ends when the bag empties. Matches are formed by a{" "}
-          <Link to="/">rolling 60-second lobby</Link>: bots queue up, and either the lobby fills
-          with real entrants or the timer expires and idle simulated bots fill empty slots.
+          Each round the module reveals one letter from a shared Scrabble bag
+          and runs a <b>1-second sealed-bid auction</b>. The highest bidder wins
+          the letter and adds it to their private rack. With those letters, bots
+          can play any dictionary word at any time, earning currency that funds
+          future bids. Long words pay a length bonus (1×→3×). A match ends when
+          the bag empties. Matches are formed by a{" "}
+          <Link to="/">rolling 60-second lobby</Link>: bots queue up, and either
+          the lobby fills with real entrants or the timer expires and idle
+          simulated bots fill empty slots.
         </p>
 
         <h2 style={{ marginTop: 16 }}>Auction types</h2>
         <ul>
           <li>
-            <b>Vickrey (default).</b> Winner pays the runner-up's bid. Truth-telling is optimal;
-            strategy = modeling letter value.
+            <b>Vickrey (default).</b> Winner pays the runner-up's bid.
+            Truth-telling is optimal; strategy = modeling letter value.
           </li>
           <li>
-            <b>First-price.</b> Winner pays their own bid. Bid shading required to avoid the
-            winner's curse.
+            <b>First-price.</b> Winner pays their own bid. Bid shading required
+            to avoid the winner's curse.
           </li>
         </ul>
 
         <h2 style={{ marginTop: 16 }}>What's visible to a bot</h2>
         <ul>
           <li>
-            <code>lobby</code> + <code>lobby_member</code> — the currently open lobby and who's
-            queued in it.
+            <code>lobby</code> + <code>lobby_member</code> — the currently open
+            lobby and who's queued in it.
           </li>
           <li>
-            <code>match_state</code> / <code>match_participant</code> — match metadata and your
-            per-match balance / score.
+            <code>match_state</code> / <code>match_participant</code> — match
+            metadata and your per-match balance / score.
           </li>
           <li>
             <code>auction</code> — open auctions across matches you're in.
           </li>
           <li>
-            <code>auction_result</code> — every completed auction (letter, winner_bot_id,
-            top_bid, paid).
+            <code>auction_result</code> — every completed auction (letter,
+            winner_bot_id, top_bid, paid).
           </li>
           <li>
             <code>word_play</code> — every word played (letters used).
           </li>
           <li>
-            <code>my_rack</code> view — your own letters across all matches; clients filter by
-            <code> match_id</code>. Opponents' racks and remaining bag composition stay hidden,
-            though both are derivable from public auction + word-play events if you're motivated.
+            <code>my_rack</code> view — your own letters across all matches;
+            clients filter by
+            <code> match_id</code>. Opponents' racks and remaining bag
+            composition stay hidden, though both are derivable from public
+            auction + word-play events if you're motivated.
           </li>
           <li>
-            <code>bot</code> + <code>bot_credential</code> — the bots you can act as, plus the
-            full list of registered bots.
+            <code>bot</code> + <code>bot_credential</code> — the bots you can
+            act as, plus the full list of registered bots.
           </li>
         </ul>
 
         <h2 style={{ marginTop: 16 }}>Reducers you'll call</h2>
-        <pre style={preStyle}>{`join_lobby()                                 // enter the open lobby
+        <pre
+          style={preStyle}
+        >{`join_lobby()                                 // enter the open lobby
 submit_bid(auction_id: u64, amount: i64)     // bid on an open auction
 submit_word(match_id: u64, word: String)     // spend letters from rack`}</pre>
         <p className="secondary">
           You don't manually start matches — the lobby handles that. Just call{" "}
-          <code>join_lobby</code> when you're free (your bot starts a new match or rejoins after
-          its previous one ends).
+          <code>join_lobby</code> when you're free (your bot starts a new match
+          or rejoins after its previous one ends).
         </p>
 
         <h2 style={{ marginTop: 16 }}>Scoring</h2>
         <ul>
           <li>Letter values are standard Scrabble (A=1 … Q,Z=10).</li>
           <li>
-            Base score = sum of letter values. Length multiplier: 1× for ≤3 letters, 1.5× at 4,
-            2× at 5, 2.5× at 6, 3× at 7+.
+            Base score = sum of letter values. Length multiplier: 1× for ≤3
+            letters, 1.5× at 4, 2× at 5, 2.5× at 6, 3× at 7+.
           </li>
           <li>
-            Reward goes into both <code>balance</code> (spendable on future bids) and{" "}
-            <code>score</code> (ranking).
+            Reward goes into both <code>balance</code> (spendable on future
+            bids) and <code>score</code> (ranking).
           </li>
-          <li>Match ends when the shared bag empties. Tiles with no bid are returned to the bag.</li>
           <li>
-            After every match, each bot's ELO rating updates pairwise based on relative finishing
-            score. See <Link to="/leaderboard">the leaderboard</Link>.
+            Match ends when the shared bag empties. Tiles with no bid are
+            returned to the bag.
+          </li>
+          <li>
+            After every match, each bot's ELO rating updates pairwise based on
+            relative finishing score. See{" "}
+            <Link to="/leaderboard">the leaderboard</Link>.
           </li>
         </ul>
 
         <h2 style={{ marginTop: 16 }}>Get a token for your bot</h2>
         <ol>
           <li>
-            <Link to="/team/new">Create a team</Link> (or join an existing one). You'll need to
-            link your spacetimedb.com identity from <Link to="/account">/account</Link> first.
+            <Link to="/team/new">Create a team</Link> (or join an existing one).
+            You'll need to link your spacetimedb.com identity from{" "}
+            <Link to="/account">/account</Link> first.
           </li>
           <li>
-            On your <Link to="/team">team page</Link>, click <b>Generate token</b>. You'll get a
-            SpacetimeDB JWT bound to a fresh credential for your team's bot.
+            On your <Link to="/team">team page</Link>, click{" "}
+            <b>Generate token</b>. You'll get a SpacetimeDB JWT bound to a fresh
+            credential for your team's bot.
           </li>
           <li>Save that token — it's shown only once.</li>
         </ol>
 
         <h2 style={{ marginTop: 16 }}>Use the token in your bot</h2>
         <p>
-          The token authenticates your bot as a credential for your team's bot persona. Drop it
-          into the SDK's <code>withToken()</code> call:
+          The token authenticates your bot as a credential for your team's bot
+          persona. Drop it into the SDK's <code>withToken()</code> call:
         </p>
-        <pre style={preStyle}>{`import { DbConnection } from "./module_bindings";
+        <pre
+          style={preStyle}
+        >{`import { DbConnection } from "./module_bindings";
 
 DbConnection.builder()
   .withUri("https://maincloud.spacetimedb.com")
@@ -120,7 +134,7 @@ DbConnection.builder()
     conn.subscriptionBuilder()
       .onApplied(() => {
         // 1. Find which bot you are.
-        const cred = conn.db.bot_credential.identity.find(identity);
+        const cred = conn.db.botCredential.identity.find(identity);
         const myBotId = cred?.botId;
         if (myBotId === undefined) {
           console.error("No bot for this token — get a fresh one from /team");
@@ -141,13 +155,13 @@ DbConnection.builder()
     });
 
     // 4. When your rack changes, look for words you can play.
-    conn.db.my_rack.onUpdate(() => {
+    conn.db.myRack.onUpdate(() => {
       // ... pick a word from your tiles ...
       // conn.reducers.submitWord({ matchId, word });
     });
 
     // 5. Re-join the lobby after each match ends.
-    conn.db.match_state.onUpdate((_ctx, oldRow, newRow) => {
+    conn.db.matchState.onUpdate((_ctx, oldRow, newRow) => {
       if (oldRow.status.tag !== "Ended" && newRow.status.tag === "Ended") {
         conn.reducers.joinLobby({});
       }
@@ -157,19 +171,20 @@ DbConnection.builder()
 
         <h2 style={{ marginTop: 16 }}>Starter kit</h2>
         <p>
-          The repo's <code>bot-starter/</code> directory is a TypeScript skeleton wired up with
-          all the boilerplate above (token handling, lobby joining, rack tracking, match
-          lifecycle). Edit <code>src/strategy.ts</code> — it has two functions you'll want to
+          The repo's <code>bot-starter/</code> directory is a TypeScript
+          skeleton wired up with all the boilerplate above (token handling,
+          lobby joining, rack tracking, match lifecycle). Edit{" "}
+          <code>src/strategy.ts</code> — it has two functions you'll want to
           tune:
         </p>
         <ul>
           <li>
-            <code>decideBid(ctx)</code> — returns the amount to bid on the current letter, given
-            your balance and rack.
+            <code>decideBid(ctx)</code> — returns the amount to bid on the
+            current letter, given your balance and rack.
           </li>
           <li>
-            <code>chooseWord(ctx)</code> — picks a word to play from your tiles, given the
-            shared dictionary.
+            <code>chooseWord(ctx)</code> — picks a word to play from your tiles,
+            given the shared dictionary.
           </li>
         </ul>
         <pre style={preStyle}>{`git clone <repo>
@@ -180,16 +195,18 @@ npm run generate
 # Use the token from /team:
 BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
         <p className="secondary">
-          The starter persists the token to <code>.token-&lt;BOT_NAME&gt;</code> so future runs
-          don't need <code>BOT_TOKEN</code>. To rotate, mint a new token on{" "}
-          <Link to="/team">/team</Link>.
+          The starter persists the token to <code>.token-&lt;BOT_NAME&gt;</code>{" "}
+          so future runs don't need <code>BOT_TOKEN</code>. To rotate, mint a
+          new token on <Link to="/team">/team</Link>.
         </p>
 
         <h2 style={{ marginTop: 16 }}>Other languages</h2>
         <p>
-          SpacetimeDB has SDKs for Rust, C#, and TypeScript. The reducer interface is
-          language-agnostic; the starter is just a convenience. Generate bindings with{" "}
-          <code>spacetime generate --lang &lt;lang&gt;</code> against this module.
+          SpacetimeDB has SDKs for Rust, C#, and TypeScript. The reducer
+          interface is language-agnostic; the starter is just a convenience.
+          Generate bindings with{" "}
+          <code>spacetime generate --lang &lt;lang&gt;</code> against this
+          module.
         </p>
       </section>
     </>
