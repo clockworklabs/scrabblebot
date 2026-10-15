@@ -181,6 +181,18 @@ pub struct CredentialNonce {
     pub expires_at: Timestamp,
 }
 
+// Deletes a nonce when it expires. A claimed nonce is deleted sooner, and
+// its job then finds nothing to do.
+#[table(accessor = nonce_expiry_schedule, scheduled(nonce_expiry_tick))]
+#[derive(Clone)]
+pub struct NonceExpirySchedule {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: ScheduleAt,
+    pub nonce_id: u64,
+}
+
 // Team — group of humans, owns exactly one Bot (Bot.team_id points back).
 #[table(accessor = team, public)]
 #[derive(Clone)]
@@ -1016,12 +1028,17 @@ pub fn mint_credential_nonce(ctx: &ReducerContext) -> Result<(), String> {
         .ok_or("Your team has no bot")?;
     let code = generate_nonce_code(ctx);
     let expires_at = ctx.timestamp + Duration::from_secs(NONCE_TTL_SECONDS);
-    ctx.db.credential_nonce().insert(CredentialNonce {
+    let nonce = ctx.db.credential_nonce().insert(CredentialNonce {
         id: 0,
-        code: code.clone(),
+        code,
         bot_id: bot.id,
         creator: human,
         expires_at,
+    });
+    ctx.db.nonce_expiry_schedule().insert(NonceExpirySchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(expires_at),
+        nonce_id: nonce.id,
     });
     log::info!(
         "Nonce minted for bot {} (expires in {}s)",
@@ -1042,9 +1059,9 @@ pub fn claim_credential(ctx: &ReducerContext, code: String) -> Result<(), String
         .code()
         .find(code.clone())
         .ok_or("No such nonce")?;
+    // Its expiry job may not have run yet. (Deleting it here would be
+    // rolled back along with everything else when we return Err.)
     if ctx.timestamp >= nonce.expires_at {
-        // Clean it up.
-        ctx.db.credential_nonce().id().delete(nonce.id);
         return Err("This nonce has expired".into());
     }
     // Is the caller already a credential for ANY bot? Disallow — a fresh
@@ -1066,6 +1083,13 @@ pub fn claim_credential(ctx: &ReducerContext, code: String) -> Result<(), String
     });
     ctx.db.credential_nonce().id().delete(nonce.id);
     log::info!("Credential claimed for bot {}", nonce.bot_id);
+    Ok(())
+}
+
+#[reducer]
+pub fn nonce_expiry_tick(ctx: &ReducerContext, job: NonceExpirySchedule) -> Result<(), String> {
+    require_scheduler(ctx)?;
+    ctx.db.credential_nonce().id().delete(job.nonce_id);
     Ok(())
 }
 

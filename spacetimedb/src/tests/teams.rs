@@ -275,22 +275,65 @@ fn expired_nonces_are_rejected() {
     );
 }
 
-// The expired-nonce branch deletes the row and then returns Err, which rolls
-// the whole transaction back — so the cleanup never happens. Expired nonces
-// pile up until something else removes them.
+fn expiry_jobs(ctx: &TestContext) -> Vec<NonceExpirySchedule> {
+    ctx.db.nonce_expiry_schedule().iter().collect()
+}
+
 #[test]
-#[ignore = "bug: expired nonce cleanup is rolled back by the Err return"]
+fn minting_schedules_the_nonce_to_expire() {
+    let ctx = new_db();
+    create(&ctx, "alice", "Team", "Robo").unwrap();
+    call(&ctx, "alice", mint_credential_nonce).unwrap();
+
+    let nonce = nonces_for(&ctx, "alice").pop().unwrap();
+    let jobs = expiry_jobs(&ctx);
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].nonce_id, nonce.id);
+    assert_eq!(jobs[0].scheduled_at, ScheduleAt::Time(nonce.expires_at));
+}
+
+#[test]
 fn expired_nonces_are_cleaned_up() {
     let ctx = new_db();
     create(&ctx, "alice", "Team", "Robo").unwrap();
     call(&ctx, "alice", mint_credential_nonce).unwrap();
-    let code = nonces_for(&ctx, "alice")[0].code.clone();
+    call(&ctx, "alice", mint_credential_nonce).unwrap();
+    let job = expiry_jobs(&ctx)
+        .into_iter()
+        .min_by_key(|j| j.nonce_id)
+        .unwrap();
 
     ctx.clock
         .set(now() + Duration::from_secs(NONCE_TTL_SECONDS));
-    let _ = call(&ctx, "robo-process", |tx| claim_credential(tx, code));
+    internal(&ctx, |tx| nonce_expiry_tick(tx, job.clone())).unwrap();
 
-    assert!(nonces_for(&ctx, "alice").is_empty());
+    let left = nonces_for(&ctx, "alice");
+    assert_eq!(left.len(), 1, "only the expired nonce goes");
+    assert_ne!(left[0].id, job.nonce_id);
+}
+
+#[test]
+fn the_expiry_job_tolerates_an_already_claimed_nonce() {
+    let ctx = new_db();
+    create(&ctx, "alice", "Team", "Robo").unwrap();
+    call(&ctx, "alice", mint_credential_nonce).unwrap();
+    let code = nonces_for(&ctx, "alice")[0].code.clone();
+    call(&ctx, "robo-process", |tx| claim_credential(tx, code)).unwrap();
+
+    let job = expiry_jobs(&ctx).pop().unwrap();
+    internal(&ctx, |tx| nonce_expiry_tick(tx, job)).unwrap();
+}
+
+#[test]
+fn clients_cannot_expire_nonces() {
+    let ctx = new_db();
+    create(&ctx, "alice", "Team", "Robo").unwrap();
+    call(&ctx, "alice", mint_credential_nonce).unwrap();
+    let job = expiry_jobs(&ctx).pop().unwrap();
+
+    let err = call(&ctx, "mallory", |tx| nonce_expiry_tick(tx, job)).unwrap_err();
+    assert_eq!(err, "Only the scheduler may call this");
+    assert_eq!(nonces_for(&ctx, "alice").len(), 1);
 }
 
 // `leave_team` deletes a dissolved team's bot and credentials but not its
