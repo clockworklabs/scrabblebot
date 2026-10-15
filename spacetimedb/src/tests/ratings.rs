@@ -74,15 +74,13 @@ fn a_draw_leaves_equal_ratings_unchanged() {
     assert!((stats(&ctx, a).openskill_mu - 25.0).abs() < 1e-9);
 }
 
-// `was_win = idx == 0` after sorting by score, so whichever tied bot happens
-// to sort first gets the win. Is a tie for first a win for both, or neither?
 #[test]
-#[ignore = "question: a tie for first credits exactly one bot with a win"]
-fn a_tie_for_first_is_not_an_arbitrary_win() {
+fn everyone_tied_for_first_gets_a_win() {
     let ctx = new_db();
-    let [a, b] = [sim_ids(&ctx)[0], sim_ids(&ctx)[1]];
-    rate(&ctx, &[(a, 20), (b, 20)]);
-    assert_eq!(stats(&ctx, a).wins, stats(&ctx, b).wins);
+    let s = sim_ids(&ctx);
+    rate(&ctx, &[(s[0], 20), (s[1], 20), (s[2], 5)]);
+    let wins: Vec<u32> = s[..3].iter().map(|b| stats(&ctx, *b).wins).collect();
+    assert_eq!(wins, vec![1, 1, 0]);
 }
 
 #[test]
@@ -115,12 +113,18 @@ fn finishing_a_real_match_rates_everyone_in_it() {
     let m = start_match(&ctx, AuctionType::Vickrey, &sims);
     run_to_end(&ctx, m);
 
+    let top = sims
+        .iter()
+        .map(|b| participant(&ctx, m, *b).score)
+        .max()
+        .unwrap();
     for bot in &sims {
         let s = stats(&ctx, *bot);
+        let score = participant(&ctx, m, *bot).score;
         assert_eq!(s.matches_played, 1);
-        assert_eq!(s.total_score, participant(&ctx, m, *bot).score);
+        assert_eq!(s.total_score, score);
+        assert_eq!(s.wins, u32::from(score == top), "bot {bot}");
     }
-    assert_eq!(sims.iter().map(|b| stats(&ctx, *b).wins).sum::<u32>(), 1);
 }
 
 #[test]

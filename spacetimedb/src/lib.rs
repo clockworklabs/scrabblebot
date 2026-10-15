@@ -2119,7 +2119,8 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
         let new_wl = weng_lin_rating_period(&pre_wl[idx], &wl_results, &wl_config);
 
         let existing = get_or_init_stats(ctx, p.bot_id);
-        let was_win = idx == 0;
+        // Everyone tied on the top score shares the win.
+        let was_win = p.score == placed[0].score;
         let stats = BotStats {
             rating: new_rating,
             openskill_mu: new_wl.rating,
