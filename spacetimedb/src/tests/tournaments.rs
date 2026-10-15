@@ -242,10 +242,29 @@ fn the_top_cut_keeps_the_best_swiss_records() {
     );
 }
 
-// `pair_into_matches` only seats full tables, so with 7 bots and a match
-// size of 3 one bot sits out every Swiss round with zero points.
 #[test]
-#[ignore = "bug: entrants that don't fill a table never play in Swiss rounds"]
+fn table_sizes_seat_everyone_evenly() {
+    assert_eq!(table_sizes(6, 3), vec![3, 3]);
+    assert_eq!(table_sizes(7, 3), vec![4, 3]);
+    assert_eq!(table_sizes(8, 3), vec![4, 4]);
+    assert_eq!(table_sizes(11, 3), vec![4, 4, 3]);
+    assert_eq!(table_sizes(5, 3), vec![5]);
+    assert_eq!(table_sizes(2, 2), vec![2]);
+    assert_eq!(table_sizes(1, 2), Vec::<usize>::new());
+    for n in 2..40 {
+        for size in 2..8 {
+            let sizes = table_sizes(n, size);
+            assert_eq!(sizes.iter().sum::<usize>(), n, "n={n} size={size}");
+            assert!(
+                sizes.iter().all(|s| *s >= size.min(n)),
+                "n={n} size={size}: {sizes:?}"
+            );
+            assert!(sizes.iter().max().unwrap() - sizes.iter().min().unwrap() <= 1);
+        }
+    }
+}
+
+#[test]
 fn every_entrant_plays_in_round_one() {
     let ctx = admin_db();
     call(&ctx, "admin", |tx| {
@@ -253,7 +272,7 @@ fn every_entrant_plays_in_round_one() {
     })
     .unwrap();
     let t = start(&ctx, 1, 2, 3).unwrap();
-    let seated: usize = tmatches(&ctx, t, TournamentPhase::Swiss)
+    let sizes: Vec<usize> = tmatches(&ctx, t, TournamentPhase::Swiss)
         .iter()
         .map(|tm| {
             ctx.db
@@ -262,6 +281,66 @@ fn every_entrant_plays_in_round_one() {
                 .filter(tm.match_id)
                 .count()
         })
-        .sum();
-    assert_eq!(seated, 7);
+        .collect();
+    assert_eq!(sizes, vec![4, 3]);
+}
+
+#[test]
+fn an_oversized_table_scores_against_the_match_size() {
+    let ctx = admin_db();
+    call(&ctx, "admin", |tx| {
+        spawn_simulated_bot(tx, "Extra-sim".into(), BotStrategy::Cheapskate)
+    })
+    .unwrap();
+    let t = start(&ctx, 2, 2, 3).unwrap();
+    let big = tmatches(&ctx, t, TournamentPhase::Swiss)
+        .into_iter()
+        .find(|tm| {
+            ctx.db
+                .match_participant()
+                .mp_by_match()
+                .filter(tm.match_id)
+                .count()
+                == 4
+        })
+        .unwrap()
+        .match_id;
+    run_to_end(&ctx, big);
+
+    let mut placed: Vec<MatchParticipant> = ctx
+        .db
+        .match_participant()
+        .mp_by_match()
+        .filter(big)
+        .collect();
+    placed.sort_by_key(|p| std::cmp::Reverse(p.score));
+    let points: Vec<i32> = placed
+        .iter()
+        .map(|p| {
+            entries(&ctx, t)
+                .into_iter()
+                .find(|e| e.bot_id == p.bot_id)
+                .unwrap()
+                .swiss_points
+        })
+        .collect();
+    assert_eq!(points, vec![3, 2, 1, 0]);
+}
+
+#[test]
+fn a_tournament_with_an_awkward_field_still_finishes() {
+    let ctx = admin_db();
+    call(&ctx, "admin", |tx| {
+        spawn_simulated_bot(tx, "Extra-sim".into(), BotStrategy::Cheapskate)
+    })
+    .unwrap();
+    let t = start(&ctx, 2, 3, 3).unwrap();
+    play_out(&ctx);
+
+    assert_eq!(tournament(&ctx, t).status, TournamentStatus::Ended);
+    assert!(
+        entries(&ctx, t).iter().all(|e| e.swiss_points > 0),
+        "everyone played"
+    );
+    assert_eq!(entries(&ctx, t).iter().filter(|e| !e.eliminated).count(), 1);
 }

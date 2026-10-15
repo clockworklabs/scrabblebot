@@ -124,9 +124,12 @@ auction, and on bag empty calls `on_match_ended(match_id)`.
 Three phases on a single Tournament row:
 
 - **Swiss**: `start_tournament` pairs all bots randomly into matches of
-  size `match_size` for round 1. Subsequent rounds sort by `swiss_points`
-  and pair adjacently. Points awarded per finishing position
-  (1st = `n`, last = 1).
+  about `match_size` for round 1. Subsequent rounds sort by `swiss_points`
+  and pair adjacently. Nobody sits out: there are `floor(n / match_size)`
+  tables and any leftover bots are spread one per table, so 7 bots at
+  size 3 play at tables of 4 and 3. Points per finishing position are
+  `match_size − place` (1st = `match_size`), floored at 0, so first is
+  worth the same at every table.
 - **Bracket**: after the configured number of Swiss rounds, top
   `top_cut` advance. Each round eliminates the last-place finisher per
   match. Continues until only 2 remain.

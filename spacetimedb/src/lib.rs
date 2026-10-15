@@ -1690,13 +1690,11 @@ fn pair_into_matches(
     round: u32,
     phase: TournamentPhase,
 ) -> Result<(), String> {
-    let match_size = t.match_size as usize;
-    let mut i = 0;
-    while i + match_size <= entries.len() {
-        let roster: Vec<u64> = entries[i..i + match_size]
-            .iter()
-            .map(|e| e.bot_id)
-            .collect();
+    let mut rest = entries;
+    for size in table_sizes(entries.len(), t.match_size as usize) {
+        let (table, tail) = rest.split_at(size);
+        rest = tail;
+        let roster: Vec<u64> = table.iter().map(|e| e.bot_id).collect();
         let new_match_id = start_match_with(ctx, t.auction_type.clone(), roster)?;
         ctx.db.tournament_match().insert(TournamentMatch {
             id: 0,
@@ -1705,9 +1703,20 @@ fn pair_into_matches(
             round,
             phase: phase.clone(),
         });
-        i += match_size;
     }
     Ok(())
+}
+
+// Seat `n` entrants at tables of about `match_size`, leaving nobody out:
+// floor(n / match_size) tables, with the leftovers spread one per table
+// from the top, so sizes differ by at most one (7 at size 3 → [4, 3]).
+fn table_sizes(n: usize, match_size: usize) -> Vec<usize> {
+    if n < 2 || match_size == 0 {
+        return vec![];
+    }
+    let tables = (n / match_size).max(1);
+    let (base, extra) = (n / tables, n % tables);
+    (0..tables).map(|i| base + usize::from(i < extra)).collect()
 }
 
 fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
@@ -1757,9 +1766,12 @@ fn on_match_ended(ctx: &ReducerContext, match_id: u64) {
 
     match tm.phase {
         TournamentPhase::Swiss => {
-            let n = placed.len() as i32;
+            // Scored against the configured match size, not this table's,
+            // so first place is worth the same at every table. Places past
+            // match_size at an oversized table earn nothing.
+            let n = t.match_size as i32;
             for (idx, p) in placed.iter().enumerate() {
-                let pts = n - idx as i32;
+                let pts = (n - idx as i32).max(0);
                 let entry: Option<TournamentEntry> = ctx
                     .db
                     .tournament_entry()
