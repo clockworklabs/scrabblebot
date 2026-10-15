@@ -336,15 +336,13 @@ fn clients_cannot_expire_nonces() {
     assert_eq!(nonces_for(&ctx, "alice").len(), 1);
 }
 
-// `leave_team` deletes a dissolved team's bot and credentials but not its
-// outstanding nonces, which can still be claimed — giving the claimant a
-// credential for a bot that no longer exists.
 #[test]
-#[ignore = "bug: a dissolved team's unclaimed nonces can still be redeemed"]
 fn dissolving_a_team_revokes_its_nonces() {
     let ctx = new_db();
     create(&ctx, "alice", "Team", "Robo").unwrap();
+    create(&ctx, "bob", "Other", "Other").unwrap();
     call(&ctx, "alice", mint_credential_nonce).unwrap();
+    call(&ctx, "bob", mint_credential_nonce).unwrap();
     let code = nonces_for(&ctx, "alice")[0].code.clone();
     call(&ctx, "alice", leave_team).unwrap();
 
@@ -352,4 +350,5 @@ fn dissolving_a_team_revokes_its_nonces() {
         call(&ctx, "robo-process", |tx| claim_credential(tx, code)),
         Err("No such nonce".into())
     );
+    assert_eq!(nonces_for(&ctx, "bob").len(), 1, "other teams keep theirs");
 }

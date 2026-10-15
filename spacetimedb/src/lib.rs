@@ -952,7 +952,8 @@ pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
         .filter(team_id)
         .count();
     if remaining == 0 {
-        // Delete the team's bot too (along with any stats/credentials).
+        // Delete the team's bot too, with its credentials and any nonces
+        // that would otherwise mint new credentials for it.
         let bot_ids: Vec<u64> = ctx
             .db
             .bot()
@@ -970,6 +971,16 @@ pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
                 .collect();
             for cid in cred_ids {
                 ctx.db.bot_credential().identity().delete(cid);
+            }
+            let nonce_ids: Vec<u64> = ctx
+                .db
+                .credential_nonce()
+                .iter()
+                .filter(|n| n.bot_id == bid)
+                .map(|n| n.id)
+                .collect();
+            for nid in nonce_ids {
+                ctx.db.credential_nonce().id().delete(nid);
             }
             ctx.db.bot().id().delete(bid);
         }
