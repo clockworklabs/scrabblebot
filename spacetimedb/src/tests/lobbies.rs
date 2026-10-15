@@ -29,21 +29,6 @@ fn join(ctx: &TestContext, bot: &str) -> Result<(), String> {
     call(ctx, bot, join_lobby)
 }
 
-fn timeout(ctx: &TestContext, lobby_id: u64) {
-    internal(ctx, |tx| {
-        lobby_timeout_tick(
-            tx,
-            LobbyTimeoutSchedule {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::Time(tx.timestamp),
-                lobby_id,
-            },
-        );
-        Ok(())
-    })
-    .unwrap();
-}
-
 /// Six real bots, Bot0..Bot5, each on its own team.
 fn real_bots(ctx: &TestContext, n: usize) -> Vec<u64> {
     (0..n)
@@ -127,7 +112,7 @@ fn timing_out_pads_the_lobby_with_distinct_sims() {
     join(&ctx, "Bot1").unwrap();
     let lobby = open_lobby(&ctx);
 
-    timeout(&ctx, lobby.id);
+    lobby_timeout(&ctx, lobby.id);
 
     let match_id = ctx
         .db
@@ -154,7 +139,7 @@ fn timing_out_pads_the_lobby_with_distinct_sims() {
 fn an_empty_lobby_times_out_into_an_all_sim_match() {
     let ctx = new_db();
     let lobby = open_lobby(&ctx);
-    timeout(&ctx, lobby.id);
+    lobby_timeout(&ctx, lobby.id);
 
     let match_id = ctx
         .db
@@ -174,7 +159,7 @@ fn a_lobby_that_cannot_reach_two_players_is_cancelled() {
     join(&ctx, "Robo").unwrap();
     let lobby = open_lobby(&ctx);
 
-    timeout(&ctx, lobby.id);
+    lobby_timeout(&ctx, lobby.id);
 
     let cancelled = ctx.db.lobby().id().find(lobby.id).unwrap();
     assert_eq!(cancelled.status, LobbyStatus::Cancelled);
@@ -202,8 +187,8 @@ fn a_late_timeout_for_a_resolved_lobby_does_nothing() {
     }
     let next = open_lobby(&ctx);
 
-    timeout(&ctx, lobby.id);
-    timeout(&ctx, 9999);
+    lobby_timeout(&ctx, lobby.id);
+    lobby_timeout(&ctx, 9999);
 
     assert_eq!(ctx.db.match_state().count(), 1);
     assert_eq!(open_lobby(&ctx).id, next.id);
@@ -229,23 +214,15 @@ fn bots_can_rejoin_once_their_match_ends() {
     join(&ctx, "Robo").unwrap();
 }
 
-// TODO.md: "Gate `auction_tick` and `lobby_timeout_tick` to the scheduler."
 #[test]
-#[ignore = "TODO.md: scheduled reducers are callable by any client"]
 fn clients_cannot_force_a_lobby_timeout() {
     let ctx = new_db();
+    team_with_bot(&ctx, "alice", "Robo");
     let lobby = open_lobby(&ctx);
-    let result = call(&ctx, "mallory", |tx| {
-        lobby_timeout_tick(
-            tx,
-            LobbyTimeoutSchedule {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::Time(tx.timestamp),
-                lobby_id: lobby.id,
-            },
-        );
-        Ok(())
-    });
-    let _ = result;
+
+    for who in ["mallory", "Robo"] {
+        let err = call(&ctx, who, |tx| lobby_timeout_tick(tx, lobby_job(lobby.id))).unwrap_err();
+        assert_eq!(err, "Only the scheduler may call this");
+    }
     assert_eq!(open_lobby(&ctx).id, lobby.id, "lobby should still be open");
 }

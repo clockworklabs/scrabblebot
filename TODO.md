@@ -19,11 +19,6 @@ Things we're aware of but haven't done yet.
 
 ## Security / robustness
 
-- [ ] **Gate `auction_tick` and `lobby_timeout_tick` to the scheduler.**
-  They're currently callable by any client, which would let someone
-  trigger a premature lobby resolution or auction close. Fine for a
-  hackathon, not for a real deployment.
-
 - [ ] **Per-bot identity in `submit_bid` / `submit_word` is implicit.**
   Bots authenticate via their `BotCredential`. If a token leaks, the
   holder can do anything that bot can do. Token recovery means minting a

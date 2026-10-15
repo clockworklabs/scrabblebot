@@ -504,18 +504,7 @@ fn a_bot_whose_team_dissolves_in_the_lobby_does_not_break_the_match() {
         .next()
         .unwrap()
         .id;
-    internal(&ctx, |tx| {
-        lobby_timeout_tick(
-            tx,
-            LobbyTimeoutSchedule {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::Time(tx.timestamp),
-                lobby_id,
-            },
-        );
-        Ok(())
-    })
-    .unwrap();
+    lobby_timeout(&ctx, lobby_id);
 
     for m in ctx.db.match_state().iter() {
         assert!(
@@ -527,25 +516,14 @@ fn a_bot_whose_team_dissolves_in_the_lobby_does_not_break_the_match() {
     call(&ctx, "Ben", join_lobby).expect("Ben should not be stuck");
 }
 
-// TODO.md: "Gate `auction_tick` and `lobby_timeout_tick` to the scheduler."
 #[test]
-#[ignore = "TODO.md: scheduled reducers are callable by any client"]
 fn clients_cannot_close_an_auction_early() {
     let ctx = new_db();
     let [ann, ben, _] = three_bots(&ctx);
     let m = start_match(&ctx, AuctionType::Vickrey, &[ann, ben]);
     let a = current_auction(&ctx, m).id;
-    let _ = call(&ctx, "Ann", |tx| {
-        auction_tick(
-            tx,
-            AuctionSchedule {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::Time(tx.timestamp),
-                match_id: m,
-            },
-        );
-        Ok(())
-    });
+    let err = call(&ctx, "Ann", |tx| auction_tick(tx, auction_job(m))).unwrap_err();
+    assert_eq!(err, "Only the scheduler may call this");
     assert_eq!(
         ctx.db.auction().id().find(a).unwrap().status,
         AuctionStatus::Open

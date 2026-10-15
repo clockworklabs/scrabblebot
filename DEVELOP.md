@@ -186,6 +186,7 @@ assume the caller already *is* the human.
 | `add_admin` / `remove_admin` | Admin | Caller checked via `require_admin` |
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
 | `start_tournament(...)` | Admin | — |
+| `auction_tick` / `lobby_timeout_tick` | Scheduler only | `require_scheduler` rejects any client caller |
 
 Reducers that move shared state are admin-gated via `require_admin(ctx)?`
 at the top of the function.
@@ -328,9 +329,6 @@ aliases due to be removed in the next major version. Index accessors
 
 ## Known limitations
 
-- `auction_tick` and `lobby_timeout_tick` are callable by any client (not
-  just the scheduler). Fine for a hackathon — for production, gate on the
-  scheduler's identity.
 - The dictionary is the public-domain ENABLE list. Real Scrabble play
   uses TWL (US) or SOWPODS (international); drop one in at
   `spacetimedb/wordlist.txt` (sorted, uppercase, one word per line) if

@@ -643,6 +643,16 @@ fn require_admin(ctx: &ReducerContext) -> Result<(), String> {
     }
 }
 
+// Scheduled reducers are ordinary reducers, so clients can call them too.
+// Only the database itself (the scheduler) may.
+fn require_scheduler(ctx: &ReducerContext) -> Result<(), String> {
+    if ctx.sender_auth().is_internal() {
+        Ok(())
+    } else {
+        Err("Only the scheduler may call this".into())
+    }
+}
+
 fn caller_bot_id(ctx: &ReducerContext) -> Option<u64> {
     ctx.db
         .bot_credential()
@@ -1405,8 +1415,10 @@ pub fn join_lobby(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 #[reducer]
-pub fn lobby_timeout_tick(ctx: &ReducerContext, job: LobbyTimeoutSchedule) {
+pub fn lobby_timeout_tick(ctx: &ReducerContext, job: LobbyTimeoutSchedule) -> Result<(), String> {
+    require_scheduler(ctx)?;
     resolve_lobby(ctx, job.lobby_id, true);
+    Ok(())
 }
 
 fn bot_in_running_match(ctx: &ReducerContext, bot_id: u64) -> bool {
@@ -2127,8 +2139,13 @@ pub fn backfill_elo(ctx: &ReducerContext) -> Result<(), String> {
 // ---------- Auction tick (scheduled) ----------
 
 #[reducer]
-pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) {
-    let match_id = job.match_id;
+pub fn auction_tick(ctx: &ReducerContext, job: AuctionSchedule) -> Result<(), String> {
+    require_scheduler(ctx)?;
+    close_auction(ctx, job.match_id);
+    Ok(())
+}
+
+fn close_auction(ctx: &ReducerContext, match_id: u64) {
     let m = match ctx.db.match_state().id().find(match_id) {
         Some(m) if m.status == MatchStatus::Running => m,
         _ => return,

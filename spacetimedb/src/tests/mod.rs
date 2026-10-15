@@ -195,20 +195,32 @@ pub fn set_rack(ctx: &TestContext, match_id: u64, bot_id: u64, letters: &str) {
     }
 }
 
+/// The schedule row that closes `match_id`'s current auction.
+pub fn auction_job(match_id: u64) -> AuctionSchedule {
+    AuctionSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(now()),
+        match_id,
+    }
+}
+
+/// The schedule row that times out `lobby_id`.
+pub fn lobby_job(lobby_id: u64) -> LobbyTimeoutSchedule {
+    LobbyTimeoutSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(now()),
+        lobby_id,
+    }
+}
+
 /// Close the current auction as the scheduler would.
 pub fn tick(ctx: &TestContext, match_id: u64) {
-    internal(ctx, |tx| {
-        auction_tick(
-            tx,
-            AuctionSchedule {
-                scheduled_id: 0,
-                scheduled_at: ScheduleAt::Time(tx.timestamp),
-                match_id,
-            },
-        );
-        Ok(())
-    })
-    .unwrap();
+    internal(ctx, |tx| auction_tick(tx, auction_job(match_id))).unwrap();
+}
+
+/// Time out a lobby as the scheduler would.
+pub fn lobby_timeout(ctx: &TestContext, lobby_id: u64) {
+    internal(ctx, |tx| lobby_timeout_tick(tx, lobby_job(lobby_id))).unwrap();
 }
 
 /// Tick the match until the bag runs out. Returns the number of ticks.
