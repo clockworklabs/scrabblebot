@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use rand::Rng;
 use spacetimedb::{
-    reducer, table, view, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
-    ViewContext,
+    Identity, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp, ViewContext, reducer,
+    table, view,
 };
 
 const STARTING_BALANCE: i64 = 100;
@@ -1987,9 +1987,9 @@ fn start_final_game(ctx: &ReducerContext, tournament_id: u64, game_num: u32) -> 
 // ---------- ELO ----------
 
 use skillratings::{
-    elo::{elo_rating_period, EloConfig, EloRating},
-    weng_lin::{weng_lin_rating_period, WengLinConfig, WengLinRating},
     Outcomes,
+    elo::{EloConfig, EloRating, elo_rating_period},
+    weng_lin::{WengLinConfig, WengLinRating, weng_lin_rating_period},
 };
 
 fn get_or_init_stats(ctx: &ReducerContext, bot_id: u64) -> BotStats {
@@ -2025,14 +2025,22 @@ fn update_elo_at_match_end(ctx: &ReducerContext, match_id: u64) {
     let wl_config = WengLinConfig::new();
 
     // Snapshot all ratings before any updates
-    let snapshots: Vec<BotStats> = placed.iter().map(|p| get_or_init_stats(ctx, p.bot_id)).collect();
+    let snapshots: Vec<BotStats> = placed
+        .iter()
+        .map(|p| get_or_init_stats(ctx, p.bot_id))
+        .collect();
     let pre_elo: Vec<EloRating> = snapshots
         .iter()
-        .map(|s| EloRating { rating: s.rating as f64 })
+        .map(|s| EloRating {
+            rating: s.rating as f64,
+        })
         .collect();
     let pre_wl: Vec<WengLinRating> = snapshots
         .iter()
-        .map(|s| WengLinRating { rating: s.openskill_mu, uncertainty: s.openskill_sigma })
+        .map(|s| WengLinRating {
+            rating: s.openskill_mu,
+            uncertainty: s.openskill_sigma,
+        })
         .collect();
 
     for (idx, p) in placed.iter().enumerate() {
@@ -2473,3 +2481,6 @@ fn simulate_word_play(ctx: &ReducerContext, match_id: u64, bot_id: u64) {
     };
     let _ = play_word(ctx, participant, &word);
 }
+
+#[cfg(test)]
+mod tests;

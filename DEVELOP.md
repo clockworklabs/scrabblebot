@@ -264,6 +264,27 @@ npm run dev      # spacetime dev + Vite together
 For local development, use `npm run dev:local` (requires
 `spacetime start` running in another terminal).
 
+### Tests
+
+The module has native unit tests under `spacetimedb/src/tests/`. They use
+SpacetimeDB's test harness (`spacetimedb::test_utils`, the `test-utils`
+feature, 2.12.0+): each test builds a fresh in-memory database from the
+module schema, calls reducers and views directly as a chosen caller, and
+inspects every table, private ones included. No server needed.
+
+```bash
+cd spacetimedb
+cargo test                 # the suite (~10s)
+cargo test -- --ignored    # known bugs / open questions, expected to fail
+```
+
+Tests marked `#[ignore = "bug: ..."]` or `"TODO.md: ..."` pin down known
+problems; un-ignore one when you fix it.
+
+`Cargo.lock` is tracked on purpose: the harness pulls in the SpacetimeDB
+engine, and an unlocked resolve picks an `icu_calendar` that its
+`temporal_rs` dependency can't compile against.
+
 ### Database name
 
 Set in `spacetime.local.json`. Currently `scrabblebot`. To rename in

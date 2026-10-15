@@ -3,7 +3,6 @@ dist/
 .DS_Store
 *.log
 target/
-Cargo.lock
 .env.local
 .token-*
 # bot-starter bindings still ignored (regenerated per checkout). Web app's
