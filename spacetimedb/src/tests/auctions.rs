@@ -90,14 +90,18 @@ fn starting_a_match_deals_racks_and_opens_the_first_auction() {
 }
 
 #[test]
-fn starting_a_match_with_an_unknown_bot_fails_cleanly() {
+fn starting_a_match_with_an_unknown_bot_writes_nothing() {
     let ctx = new_db();
+    let sim = sim_ids(&ctx)[0];
+    // Discard the Err and commit, as a careless caller might: the roster is
+    // checked before anything is written, so there's nothing to roll back.
     let err = internal(&ctx, |tx| {
-        start_match_with(tx, AuctionType::Vickrey, vec![9999])
+        Ok(start_match_with(tx, AuctionType::Vickrey, vec![sim, 9999]).unwrap_err())
     })
-    .unwrap_err();
+    .unwrap();
     assert_eq!(err, "Unknown bot in roster: 9999");
     assert_eq!(ctx.db.match_state().count(), 0);
+    assert_eq!(ctx.db.match_participant().count(), 0);
     assert_eq!(ctx.db.bag_letter().count(), 0);
 }
 
@@ -479,41 +483,6 @@ fn matches_are_deterministic_for_a_given_seed() {
         words
     };
     assert_eq!(play(), play());
-}
-
-// A team can dissolve while its bot sits in the lobby. When the lobby then
-// resolves, `start_match_with` has already inserted the Match and some
-// participants before hitting the missing bot; its Err is discarded by
-// `resolve_lobby`, so the half-built match stays Running forever with no
-// auction, and every bot dealt into it can never join a lobby again.
-#[test]
-#[ignore = "bug: a bot deleted while in the lobby leaves a zombie Running match"]
-fn a_bot_whose_team_dissolves_in_the_lobby_does_not_break_the_match() {
-    let ctx = new_db();
-    team_with_bot(&ctx, "alice", "Ann");
-    team_with_bot(&ctx, "bob", "Ben");
-    call(&ctx, "Ann", join_lobby).unwrap();
-    call(&ctx, "Ben", join_lobby).unwrap();
-    call(&ctx, "alice", leave_team).unwrap();
-
-    let lobby_id = ctx
-        .db
-        .lobby()
-        .lobby_by_status()
-        .filter(LobbyStatus::Open)
-        .next()
-        .unwrap()
-        .id;
-    lobby_timeout(&ctx, lobby_id);
-
-    for m in ctx.db.match_state().iter() {
-        assert!(
-            m.current_auction_id.is_some(),
-            "match {} has no auction",
-            m.id
-        );
-    }
-    call(&ctx, "Ben", join_lobby).expect("Ben should not be stuck");
 }
 
 #[test]

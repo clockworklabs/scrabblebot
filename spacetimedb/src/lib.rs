@@ -982,6 +982,16 @@ pub fn leave_team(ctx: &ReducerContext) -> Result<(), String> {
             for nid in nonce_ids {
                 ctx.db.credential_nonce().id().delete(nid);
             }
+            let lobby_rows: Vec<u64> = ctx
+                .db
+                .lobby_member()
+                .lm_by_bot()
+                .filter(bid)
+                .map(|m| m.id)
+                .collect();
+            for lid in lobby_rows {
+                ctx.db.lobby_member().id().delete(lid);
+            }
             ctx.db.bot().id().delete(bid);
         }
         ctx.db.team().id().delete(team_id);
@@ -1209,13 +1219,22 @@ pub fn backfill_top_bid_archive(ctx: &ReducerContext, max_rows: u32) -> Result<(
 // `lobby_timeout_tick`) or via the tournament code. There's no direct
 // public reducer to spawn a one-off match.
 
+// Starts a match and returns its id. Checks the whole roster before writing
+// anything, so callers that discard the Err aren't left with a half-built
+// match.
 fn start_match_with(
     ctx: &ReducerContext,
     auction_type: AuctionType,
     participants: Vec<u64>,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     if participants.is_empty() {
         return Err("Need at least one participant".into());
+    }
+    if let Some(missing) = participants
+        .iter()
+        .find(|id| ctx.db.bot().id().find(**id).is_none())
+    {
+        return Err(format!("Unknown bot in roster: {}", missing));
     }
     let bag_total: u32 = letters::DEFAULT_BAG.iter().map(|(_, c)| c).sum();
     let m = ctx.db.match_state().insert(Match {
@@ -1232,9 +1251,6 @@ fn start_match_with(
     let match_id = m.id;
 
     for bot_id in &participants {
-        if ctx.db.bot().id().find(*bot_id).is_none() {
-            return Err(format!("Unknown bot in roster: {}", bot_id));
-        }
         ctx.db.match_participant().insert(MatchParticipant {
             id: 0,
             match_id,
@@ -1316,7 +1332,7 @@ fn start_match_with(
         match_id,
         participants.len()
     );
-    Ok(())
+    Ok(match_id)
 }
 
 // ---------- Bidding ----------
@@ -1515,12 +1531,14 @@ fn resolve_lobby(ctx: &ReducerContext, lobby_id: u64, pad_with_sims: bool) {
         return; // already handled
     }
 
+    // Skip members whose bot has since been deleted (its team dissolved).
     let mut roster: Vec<u64> = ctx
         .db
         .lobby_member()
         .lm_by_lobby()
         .filter(lobby_id)
         .map(|m| m.bot_id)
+        .filter(|id| ctx.db.bot().id().find(*id).is_some())
         .collect();
 
     if pad_with_sims {
@@ -1564,23 +1582,23 @@ fn resolve_lobby(ctx: &ReducerContext, lobby_id: u64, pad_with_sims: bool) {
         return;
     }
 
-    let auction_type = lobby.auction_type.clone();
-    let prev_match_ids: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
-    let _ = start_match_with(ctx, auction_type, roster);
-    let new_match_id = ctx
-        .db
-        .match_state()
-        .iter()
-        .map(|m| m.id)
-        .filter(|id| !prev_match_ids.contains(id))
-        .max();
-
-    ctx.db.lobby().id().update(Lobby {
-        status: LobbyStatus::Resolved,
-        resolved_match_id: new_match_id,
-        ..lobby
-    });
-    log::info!("Lobby {} resolved -> match {:?}", lobby_id, new_match_id);
+    match start_match_with(ctx, lobby.auction_type.clone(), roster) {
+        Ok(match_id) => {
+            ctx.db.lobby().id().update(Lobby {
+                status: LobbyStatus::Resolved,
+                resolved_match_id: Some(match_id),
+                ..lobby
+            });
+            log::info!("Lobby {} resolved -> match {}", lobby_id, match_id);
+        }
+        Err(e) => {
+            ctx.db.lobby().id().update(Lobby {
+                status: LobbyStatus::Cancelled,
+                ..lobby
+            });
+            log::error!("Lobby {} cancelled: {}", lobby_id, e);
+        }
+    }
 
     open_lobby_or_create(ctx);
 }
@@ -1679,16 +1697,7 @@ fn pair_into_matches(
             .iter()
             .map(|e| e.bot_id)
             .collect();
-        let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
-        start_match_with(ctx, t.auction_type.clone(), roster)?;
-        let new_match_id = ctx
-            .db
-            .match_state()
-            .iter()
-            .map(|m| m.id)
-            .filter(|id| !prev_matches.contains(id))
-            .max()
-            .unwrap_or(0);
+        let new_match_id = start_match_with(ctx, t.auction_type.clone(), roster)?;
         ctx.db.tournament_match().insert(TournamentMatch {
             id: 0,
             tournament_id: t.id,
@@ -1972,16 +1981,7 @@ fn start_elimination_round(ctx: &ReducerContext, tournament_id: u64) -> Result<(
         current_round: next_round,
         ..t.clone()
     });
-    let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
-    start_match_with(ctx, t.auction_type.clone(), roster)?;
-    let new_match_id = ctx
-        .db
-        .match_state()
-        .iter()
-        .map(|m| m.id)
-        .filter(|id| !prev_matches.contains(id))
-        .max()
-        .unwrap_or(0);
+    let new_match_id = start_match_with(ctx, t.auction_type.clone(), roster)?;
     ctx.db.tournament_match().insert(TournamentMatch {
         id: 0,
         tournament_id: t.id,
@@ -2010,16 +2010,7 @@ fn start_final_game(ctx: &ReducerContext, tournament_id: u64, game_num: u32) -> 
     if roster.len() < 2 {
         return Ok(());
     }
-    let prev_matches: Vec<u64> = ctx.db.match_state().iter().map(|m| m.id).collect();
-    start_match_with(ctx, t.auction_type.clone(), roster)?;
-    let new_match_id = ctx
-        .db
-        .match_state()
-        .iter()
-        .map(|m| m.id)
-        .filter(|id| !prev_matches.contains(id))
-        .max()
-        .unwrap_or(0);
+    let new_match_id = start_match_with(ctx, t.auction_type.clone(), roster)?;
     ctx.db.tournament_match().insert(TournamentMatch {
         id: 0,
         tournament_id: t.id,

@@ -133,8 +133,7 @@ pub fn nonces_for(ctx: &TestContext, subject: &str) -> Vec<CredentialNonce> {
 /// Start a match directly, bypassing the lobby. Returns the match id.
 pub fn start_match(ctx: &TestContext, auction_type: AuctionType, bots: &[u64]) -> u64 {
     let roster = bots.to_vec();
-    internal(ctx, |tx| start_match_with(tx, auction_type, roster)).unwrap();
-    ctx.db.match_state().iter().map(|m| m.id).max().unwrap()
+    internal(ctx, |tx| start_match_with(tx, auction_type, roster)).unwrap()
 }
 
 pub fn get_match(ctx: &TestContext, match_id: u64) -> Match {

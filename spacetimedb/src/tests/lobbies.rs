@@ -215,6 +215,75 @@ fn bots_can_rejoin_once_their_match_ends() {
 }
 
 #[test]
+fn a_dissolved_teams_bot_leaves_the_lobby() {
+    let ctx = new_db();
+    let ann = team_with_bot(&ctx, "alice", "Ann");
+    join(&ctx, "Ann").unwrap();
+
+    call(&ctx, "alice", leave_team).unwrap();
+
+    assert!(
+        ctx.db
+            .lobby_member()
+            .lm_by_bot()
+            .filter(ann)
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_bot_whose_team_dissolves_in_the_lobby_does_not_break_the_match() {
+    let ctx = new_db();
+    let ann = team_with_bot(&ctx, "alice", "Ann");
+    let ben = team_with_bot(&ctx, "bob", "Ben");
+    join(&ctx, "Ann").unwrap();
+    join(&ctx, "Ben").unwrap();
+    call(&ctx, "alice", leave_team).unwrap();
+    let lobby = open_lobby(&ctx);
+
+    lobby_timeout(&ctx, lobby.id);
+
+    let m = ctx
+        .db
+        .lobby()
+        .id()
+        .find(lobby.id)
+        .unwrap()
+        .resolved_match_id
+        .unwrap();
+    let roster = match_roster(&ctx, m);
+    assert!(roster.contains(&ben) && !roster.contains(&ann));
+    assert_eq!(roster.len(), LOBBY_MAX_SIZE as usize);
+    assert!(get_match(&ctx, m).current_auction_id.is_some());
+    run_to_end(&ctx, m);
+    join(&ctx, "Ben").expect("Ben should be free to play again");
+}
+
+#[test]
+fn lobby_members_whose_bot_is_gone_are_skipped() {
+    let ctx = new_db();
+    let ann = team_with_bot(&ctx, "alice", "Ann");
+    join(&ctx, "Ann").unwrap();
+    let lobby = open_lobby(&ctx);
+    // A stale row, e.g. from before leave_team cleaned up lobbies.
+    ctx.db.lobby_member().insert(LobbyMember {
+        id: 0,
+        lobby_id: lobby.id,
+        bot_id: 9999,
+        joined_at: now(),
+    });
+
+    lobby_timeout(&ctx, lobby.id);
+
+    let resolved = ctx.db.lobby().id().find(lobby.id).unwrap();
+    assert_eq!(resolved.status, LobbyStatus::Resolved);
+    let roster = match_roster(&ctx, resolved.resolved_match_id.unwrap());
+    assert!(roster.contains(&ann) && !roster.contains(&9999));
+    assert_eq!(roster.len(), LOBBY_MAX_SIZE as usize);
+}
+
+#[test]
 fn clients_cannot_force_a_lobby_timeout() {
     let ctx = new_db();
     team_with_bot(&ctx, "alice", "Robo");
