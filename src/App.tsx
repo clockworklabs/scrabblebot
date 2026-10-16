@@ -1,5 +1,15 @@
-import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Link,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { ConnectionProvider, useConn } from "./connection";
+import { Tile } from "./Tile";
 import Home from "./pages/Home";
 import Matches from "./pages/Matches";
 import MatchView from "./pages/MatchView";
@@ -20,31 +30,48 @@ function Nav() {
   const humanShort = link ? link.humanIdentity.toHexString().slice(0, 8) : null;
   const isAdmin = !!conn?.db.myAdmin.iter().next().value;
 
+  // On narrow screens the links scroll sideways; keep the current page's
+  // link in view so the underline isn't hidden off the edge.
+  const { pathname } = useLocation();
+  const linksRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    linksRef.current
+      ?.querySelector(".active")
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [pathname]);
+
   return (
-    <nav className="nav">
-      <Link to="/" className="brand">
-        ScrabbleBot
-      </Link>
-      <Link to="/matches">Matches</Link>
-      <Link to="/leaderboard">Leaderboard</Link>
-      <Link to="/tournament">Tournament</Link>
-      <Link to="/team">Team</Link>
-      <Link to="/docs">Docs</Link>
-      {isAdmin && <Link to="/admin">Admin</Link>}
-      <span className="conn-state">
-        {connected ? "●" : "○"} {dbName}
-        {" · "}
-        {linked ? (
-          <Link to="/account" title="Linked to spacetimedb.com identity">
-            linked as {humanShort}…
-          </Link>
-        ) : (
-          <Link to="/account" className="link-cta">
-            Link account
-          </Link>
-        )}
-      </span>
-    </nav>
+    <header className="nav-bar">
+      <nav className="nav">
+        <Link to="/" className="brand">
+          <Tile letter="S" size="sm" />
+          ScrabbleBot
+        </Link>
+        <div className="nav-links" ref={linksRef}>
+          <NavLink to="/matches">Matches</NavLink>
+          <NavLink to="/leaderboard">Leaderboard</NavLink>
+          <NavLink to="/tournament">Tournament</NavLink>
+          <NavLink to="/team">Team</NavLink>
+          <NavLink to="/docs">Docs</NavLink>
+          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
+        </div>
+        <span className="conn-state">
+          <span title={connected ? "Connected" : "Disconnected"}>
+            <span className={connected ? "conn-dot on" : "conn-dot"} />
+            <span className="conn-db">{dbName}</span>
+          </span>
+          {linked ? (
+            <Link to="/account" title="Linked to spacetimedb.com identity">
+              linked as {humanShort}…
+            </Link>
+          ) : (
+            <Link to="/account" className="link-cta">
+              Link account
+            </Link>
+          )}
+        </span>
+      </nav>
+    </header>
   );
 }
 

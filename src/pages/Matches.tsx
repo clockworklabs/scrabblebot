@@ -21,7 +21,7 @@ export default function Matches() {
         <span className="status">{matches.length} total</span>
       </div>
 
-      <section className="panel full">
+      <section className="panel full table-scroll">
         <table>
           <thead>
             <tr>
