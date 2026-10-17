@@ -1,7 +1,5 @@
-import type { DbConnection } from "./module_bindings";
 import type {
   AuctionResult,
-  Bot,
   MatchParticipant,
   WordPlay,
 } from "./module_bindings/types";
@@ -21,7 +19,7 @@ export const STARTING_RACK_SIZE = 5;
 export type PublicRack = { known: Map<string, number>; hidden: number };
 
 // Reconstruct each bot's rack in a match from public AuctionResult + WordPlay
-// events. Keyed by bot_id (as string for Map convenience).
+// events, keyed by bot id.
 //
 // The starting tiles are dealt privately, so a played word may use letters
 // the public never saw arrive. Each played letter is taken from the known
@@ -31,14 +29,13 @@ export type PublicRack = { known: Map<string, number>; hidden: number };
 export function reconstructRacks(
   results: AuctionResult[],
   plays: WordPlay[],
-): Map<string, PublicRack> {
-  const racks = new Map<string, PublicRack>();
+): Map<bigint, PublicRack> {
+  const racks = new Map<bigint, PublicRack>();
   const rackOf = (botId: bigint) => {
-    const key = String(botId);
-    let rack = racks.get(key);
+    let rack = racks.get(botId);
     if (!rack) {
       rack = { known: new Map(), hidden: STARTING_RACK_SIZE };
-      racks.set(key, rack);
+      racks.set(botId, rack);
     }
     return rack;
   };
@@ -81,10 +78,10 @@ export function reconstructRacks(
 }
 
 export function rackTiles(
-  racks: Map<string, PublicRack>,
+  racks: Map<bigint, PublicRack>,
   botId: bigint,
 ): { letters: string[]; hidden: number } {
-  const rack = racks.get(String(botId));
+  const rack = racks.get(botId);
   if (!rack) return { letters: [], hidden: STARTING_RACK_SIZE };
   const letters: string[] = [];
   for (const [letter, count] of rack.known.entries()) {
@@ -94,38 +91,41 @@ export function rackTiles(
   return { letters, hidden: rack.hidden };
 }
 
-export function botName(bots: Bot[], botId: bigint | null | undefined): string {
-  if (botId === null || botId === undefined) return "—";
-  const b = bots.find((x) => x.id === botId);
-  return b?.name ?? `#${botId}`;
+// Milliseconds from `now` until `ts`, never negative.
+export function msUntil(
+  ts: { __timestamp_micros_since_unix_epoch__: bigint },
+  now: number,
+): number {
+  return Math.max(0, fmtTimestamp(ts) - now);
 }
 
-export function readAllBots(conn: DbConnection): Bot[] {
-  const out: Bot[] = [];
-  for (const b of conn.db.bot.iter()) out.push(b);
-  return out;
+export function fmtDateTime(ts: {
+  __timestamp_micros_since_unix_epoch__: bigint;
+}): string {
+  return new Date(fmtTimestamp(ts)).toLocaleString();
 }
 
-export function readParticipantsForMatch(
-  conn: DbConnection,
-  matchId: bigint,
-): MatchParticipant[] {
-  const out: MatchParticipant[] = [];
-  for (const p of conn.db.matchParticipant.iter()) {
-    if (p.matchId === matchId) out.push(p);
-  }
-  out.sort((a, b) => Number(b.score - a.score));
-  return out;
+export const plural = (n: number, one: string, many: string) =>
+  n === 1 ? one : many;
+
+// Standard competition ranking over a list sorted best-first: equal values
+// share a rank, and the next rank skips past them (1, 2, 2, 4).
+export function competitionRank<T, V>(
+  sorted: T[],
+  value: (t: T) => V,
+): (t: T) => number {
+  return (t) => sorted.findIndex((x) => value(x) === value(t)) + 1;
 }
 
-export function isBotCredentialConnected(
-  conn: DbConnection,
-  botId: bigint,
-): boolean {
-  for (const c of conn.db.botCredential.iter()) {
-    if (c.botId === botId && c.connected) return true;
-  }
-  return false;
+// Who won a match, given its standings sorted by score. Everyone level on
+// the top score shares the win; `runnerUp` is the best of the rest.
+export function matchOutcome(standings: MatchParticipant[]) {
+  const top = standings[0]?.score ?? 0n;
+  return {
+    top,
+    winners: standings.filter((p) => p.score === top),
+    runnerUp: standings.find((p) => p.score < top),
+  };
 }
 
 // Mirrors `letter_value` in spacetimedb/src/letters.rs.

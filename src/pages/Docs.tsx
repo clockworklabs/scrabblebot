@@ -1,15 +1,14 @@
 import { Link } from "react-router-dom";
 import { useConn } from "../connection";
+import { PageHeader, Panel } from "../ui";
 
 export default function Docs() {
   const { dbName } = useConn();
   return (
     <>
-      <div className="header full">
-        <h1>How to write a bot</h1>
-      </div>
+      <PageHeader title="How to write a bot" />
 
-      <section className="panel full">
+      <Panel full>
         <h2>The game in one paragraph</h2>
         <p>
           Each round the module reveals one letter from a shared Scrabble bag
@@ -23,7 +22,7 @@ export default function Docs() {
           simulated bots fill empty slots.
         </p>
 
-        <h2 style={{ marginTop: 16 }}>Auction types</h2>
+        <h2>Auction types</h2>
         <ul>
           <li>
             <b>Vickrey (default).</b> Winner pays the runner-up's bid.
@@ -35,7 +34,7 @@ export default function Docs() {
           </li>
         </ul>
 
-        <h2 style={{ marginTop: 16 }}>What's visible to a bot</h2>
+        <h2>What's visible to a bot</h2>
         <ul>
           <li>
             <code>lobby</code> + <code>lobby_member</code> — the currently open
@@ -68,10 +67,8 @@ export default function Docs() {
           </li>
         </ul>
 
-        <h2 style={{ marginTop: 16 }}>Reducers you'll call</h2>
-        <pre
-          style={preStyle}
-        >{`join_lobby()                                 // enter the open lobby
+        <h2>Reducers you'll call</h2>
+        <pre className="code-block">{`join_lobby()                                 // enter the open lobby
 submit_bid(auction_id: u64, amount: i64)     // bid on an open auction
 submit_word(match_id: u64, word: String)     // spend letters from rack`}</pre>
         <p className="secondary">
@@ -80,7 +77,7 @@ submit_word(match_id: u64, word: String)     // spend letters from rack`}</pre>
           or rejoins after its previous one ends).
         </p>
 
-        <h2 style={{ marginTop: 16 }}>Scoring</h2>
+        <h2>Scoring</h2>
         <ul>
           <li>Letter values are standard Scrabble (A=1 … Q,Z=10).</li>
           <li>
@@ -102,7 +99,7 @@ submit_word(match_id: u64, word: String)     // spend letters from rack`}</pre>
           </li>
         </ul>
 
-        <h2 style={{ marginTop: 16 }}>Get a token for your bot</h2>
+        <h2>Get a token for your bot</h2>
         <ol>
           <li>
             <Link to="/team/new">Create a team</Link> (or join an existing one).
@@ -117,14 +114,12 @@ submit_word(match_id: u64, word: String)     // spend letters from rack`}</pre>
           <li>Save that token — it's shown only once.</li>
         </ol>
 
-        <h2 style={{ marginTop: 16 }}>Use the token in your bot</h2>
+        <h2>Use the token in your bot</h2>
         <p>
           The token authenticates your bot as a credential for your team's bot
           persona. Drop it into the SDK's <code>withToken()</code> call:
         </p>
-        <pre
-          style={preStyle}
-        >{`import { DbConnection } from "./module_bindings";
+        <pre className="code-block">{`import { DbConnection } from "./module_bindings";
 
 DbConnection.builder()
   .withUri("https://maincloud.spacetimedb.com")
@@ -169,7 +164,7 @@ DbConnection.builder()
   })
   .build();`}</pre>
 
-        <h2 style={{ marginTop: 16 }}>Starter kit</h2>
+        <h2>Starter kit</h2>
         <p>
           The repo's <code>bot-starter/</code> directory is a TypeScript
           skeleton wired up with all the boilerplate above (token handling,
@@ -187,7 +182,7 @@ DbConnection.builder()
             given the shared dictionary.
           </li>
         </ul>
-        <pre style={preStyle}>{`git clone <repo>
+        <pre className="code-block">{`git clone <repo>
 cd scrabblebot/bot-starter
 npm install
 npm run generate
@@ -200,7 +195,7 @@ BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
           new token on <Link to="/team">/team</Link>.
         </p>
 
-        <h2 style={{ marginTop: 16 }}>Other languages</h2>
+        <h2>Other languages</h2>
         <p>
           SpacetimeDB has SDKs for Rust, C#, and TypeScript. The reducer
           interface is language-agnostic; the starter is just a convenience.
@@ -208,16 +203,7 @@ BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
           <code>spacetime generate --lang &lt;lang&gt;</code> against this
           module.
         </p>
-      </section>
+      </Panel>
     </>
   );
 }
-
-const preStyle: React.CSSProperties = {
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: 12,
-  overflow: "auto",
-  fontSize: 13,
-};

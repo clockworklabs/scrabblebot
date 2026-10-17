@@ -1,91 +1,59 @@
-import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { useConn } from "../connection";
 import type {
   Auction,
-  AuctionResult,
+  Bot,
   Lobby,
   LobbyMember,
   Match,
   MatchParticipant,
-  Bot,
   WordPlay,
 } from "../module_bindings/types";
-import { BAG_SIZE, fmtTimestamp, rackTiles, reconstructRacks } from "../util";
-import { Rack, Tile, TileWord } from "../Tile";
-
-// How long a freshly played word lingers under its player's score.
-const WORD_FADE_MS = 4000;
-// Words older than this by the server's clock were already history when the
-// page loaded, so they don't get the fresh-word treatment.
-const WORD_STALE_MS = 10000;
-
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
+import {
+  botNames,
+  matchHistory,
+  openAuctions,
+  standingsByMatch,
+  type BotNames,
+} from "../data";
+import {
+  matchOutcome,
+  msUntil,
+  plural,
+  reconstructRacks,
+  type PublicRack,
+} from "../util";
+import { Tile } from "../Tile";
+import { Standings } from "../Standings";
+import { BagBar, BagCount, Panel } from "../ui";
 
 export default function Home() {
-  const { conn, version } = useConn();
-  void version;
+  const { conn } = useConn();
+  const now = Date.now();
 
-  const matches: Match[] = [];
-  const bots: Bot[] = [];
-  const lobbies: Lobby[] = [];
-  const allLobbyMembers: LobbyMember[] = [];
-  const participantsByMatch = new Map<string, MatchParticipant[]>();
-  const openAuctionByMatch = new Map<string, Auction>();
-  if (conn) {
-    for (const m of conn.db.matchState.iter()) matches.push(m);
-    for (const b of conn.db.bot.iter()) bots.push(b);
-    for (const l of conn.db.lobby.iter()) lobbies.push(l);
-    for (const lm of conn.db.lobbyMember.iter()) allLobbyMembers.push(lm);
-    for (const p of conn.db.matchParticipant.iter()) {
-      const key = String(p.matchId);
-      const list = participantsByMatch.get(key) ?? [];
-      list.push(p);
-      participantsByMatch.set(key, list);
-    }
-    for (const a of conn.db.auction.iter()) {
-      if (a.status.tag === "Open") openAuctionByMatch.set(String(a.matchId), a);
-    }
-  }
-  for (const list of participantsByMatch.values()) {
-    list.sort((a, b) => Number(b.score - a.score));
-  }
-  const standingsOf = (m: Match) => participantsByMatch.get(String(m.id)) ?? [];
+  const bots = conn ? [...conn.db.bot.iter()] : [];
+  const botName = botNames(conn);
+  const standings = standingsByMatch(conn);
+  const standingsOf = (m: Match) => standings.get(m.id) ?? [];
 
+  const matches = conn ? [...conn.db.matchState.iter()] : [];
   matches.sort((a, b) => Number(b.id - a.id));
   const running = matches.filter((m) => m.status.tag === "Running");
   const ended = matches.filter((m) => m.status.tag === "Ended");
 
-  // Racks for the featured live match, rebuilt from its public sales and plays.
-  const live = running[0];
-  const liveResults: AuctionResult[] = [];
-  const livePlays: WordPlay[] = [];
-  if (conn && live) {
-    for (const r of conn.db.auctionResult.iter()) {
-      if (r.matchId === live.id) liveResults.push(r);
-    }
-    for (const p of conn.db.wordPlay.iter()) {
-      if (p.matchId === live.id) livePlays.push(p);
-    }
-  }
-  const liveRacks = reconstructRacks(liveResults, livePlays);
-
   // The single open lobby (there's only ever one).
-  const openLobby = lobbies.find((l) => l.status.tag === "Open");
-  const openLobbyMembers = openLobby
-    ? allLobbyMembers.filter((lm) => lm.lobbyId === openLobby.id)
-    : [];
+  const lobby = conn
+    ? [...conn.db.lobby.iter()].find((l) => l.status.tag === "Open")
+    : undefined;
+  const lobbyMembers =
+    conn && lobby
+      ? [...conn.db.lobbyMember.iter()].filter((lm) => lm.lobbyId === lobby.id)
+      : [];
 
-  function botName(botId: bigint): string {
-    const b = bots.find((x) => x.id === botId);
-    return b?.name ?? `#${botId}`;
-  }
-
-  const now = Date.now();
-  const lobbyMsLeft = openLobby
-    ? Math.max(0, fmtTimestamp(openLobby.closesAt) - now)
-    : 0;
+  // The featured live match, with racks rebuilt from its public history.
+  const live = running[0];
+  const history =
+    conn && live ? matchHistory(conn, live.id) : { results: [], plays: [] };
 
   return (
     <>
@@ -100,183 +68,110 @@ export default function Home() {
           ))}
         </div>
         <div className="hero-body">
-          <div>
-            <h1>Buy letters, sell words, write the smartest bot.</h1>
-            <p className="lede">
-              Start with 5 tiles and 100 scrabble-bucks. Each round a new tile
-              goes up for auction, and every bot has one second to submit a
-              sealed bid. The highest bidder buys the new tile.
-              <br />
-              Play completed words to earn points and more currency.
-            </p>
-            <p className="lede">Be fast, bid wisely, highest score wins.</p>
-            <div className="hero-actions">
-              <Link to="/team/new" className="button">
-                Register a bot
-              </Link>
-              <Link to="/docs" className="button quiet">
-                How to write a bot
-              </Link>
-            </div>
-            <div className="hero-stats">
-              <span>
-                <b>{bots.length}</b>
-                {bots.length === 1 ? "bot" : "bots"} registered
-              </span>
-              <span>
-                <b>{running.length}</b>
-                {running.length === 1 ? "match" : "matches"} running
-              </span>
-              <span>
-                <b>{ended.length}</b>
-                {ended.length === 1 ? "match" : "matches"} completed
-              </span>
-            </div>
-          </div>
-
+          <Pitch
+            bots={bots.length}
+            running={running.length}
+            ended={ended.length}
+          />
           {live ? (
             <LiveCard
               key={String(live.id)}
               match={live}
-              auction={openAuctionByMatch.get(String(live.id))}
+              auction={openAuctions(conn).get(live.id)}
               standings={standingsOf(live)}
-              racks={liveRacks}
-              plays={livePlays}
+              racks={reconstructRacks(history.results, history.plays)}
+              plays={history.plays}
               others={running.slice(1)}
               botName={botName}
               now={now}
             />
           ) : (
-            <aside className="live-card idle" aria-label="Next match">
-              <div className="live-head">
-                <span className="live-title">No match running</span>
-              </div>
-              {openLobby ? (
-                <p>
-                  The next match starts in{" "}
-                  <b>{(lobbyMsLeft / 1000).toFixed(0)}s</b>, with{" "}
-                  {plural(
-                    openLobby.maxSize - openLobbyMembers.length,
-                    "seat",
-                    "seats",
-                  )}{" "}
-                  still open.
-                </p>
-              ) : (
-                <p>A new lobby opens when the next match is scheduled.</p>
-              )}
-            </aside>
+            <IdleCard lobby={lobby} members={lobbyMembers.length} now={now} />
           )}
         </div>
       </section>
 
-      <section className="panel">
-        <h2>Next match</h2>
-        {openLobby ? (
-          <>
-            <div className="lobby-head">
-              <div>
-                <div className="lobby-fill">
-                  {openLobbyMembers.length} of {openLobby.maxSize} seats filled
-                </div>
-                <div className="secondary">
-                  Match #{String(openLobby.id)} ·{" "}
-                  {openLobby.auctionType.tag.toLowerCase()} auction
-                </div>
-              </div>
-              <div>
-                <div className="lobby-timer">
-                  {(lobbyMsLeft / 1000).toFixed(0)}s
-                </div>
-                <div className="secondary">until it starts anyway</div>
-              </div>
-            </div>
-            <div className="seats">
-              {openLobbyMembers.map((lm) => {
-                const b = bots.find((x) => x.id === lm.botId);
-                const sim = !!b?.isSimulated;
-                return (
-                  <span
-                    key={String(lm.id)}
-                    className={sim ? "seat sim" : "seat"}
-                    title={sim ? "simulated" : "real bot"}
-                  >
-                    {botName(lm.botId)}
-                  </span>
-                );
-              })}
-              {Array.from({
-                length: Math.max(
-                  0,
-                  openLobby.maxSize - openLobbyMembers.length,
-                ),
-              }).map((_, i) => (
-                <span key={`empty-${i}`} className="seat empty">
-                  open seat
-                </span>
-              ))}
-            </div>
-            <p className="secondary">
-              The match starts when the lobby fills with real bots, or when the
-              timer runs out. Empty seats are filled with simulated bots.
-            </p>
-          </>
-        ) : (
-          <div className="secondary">No open lobby right now.</div>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>Recent results</h2>
-        {ended.length === 0 ? (
-          <div className="secondary">No completed matches yet.</div>
-        ) : (
-          <table className="results">
-            <thead>
-              <tr>
-                <th>Match</th>
-                <th>Winner</th>
-                <th className="num">Points</th>
-                <th className="num">Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ended.slice(0, 6).map((m) => {
-                const standings = standingsOf(m);
-                const top = standings[0]?.score ?? 0n;
-                const winners = standings.filter((p) => p.score === top);
-                const runnerUp = standings.find((p) => p.score < top);
-                return (
-                  <tr key={String(m.id)}>
-                    <td>
-                      <Link to={`/matches/${m.id}`}>#{String(m.id)}</Link>
-                    </td>
-                    <td className="results-winner">
-                      {winners.length === 0
-                        ? "—"
-                        : winners.map((w) => botName(w.botId)).join(" & ")}
-                    </td>
-                    <td className="num">{String(top)}</td>
-                    <td className="num">
-                      {winners.length > 1
-                        ? "tie"
-                        : runnerUp
-                          ? `+${top - runnerUp.score}`
-                          : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-        {ended.length > 6 && (
-          <Link to="/matches" className="panel-more">
-            All {ended.length} results
-          </Link>
-        )}
-      </section>
+      <NextMatch lobby={lobby} members={lobbyMembers} bots={bots} now={now} />
+      <RecentResults
+        ended={ended}
+        standingsOf={standingsOf}
+        botName={botName}
+      />
     </>
+  );
+}
+
+function Pitch({
+  bots,
+  running,
+  ended,
+}: {
+  bots: number;
+  running: number;
+  ended: number;
+}) {
+  return (
+    <div>
+      <h1>Buy letters, sell words, write the smartest bot.</h1>
+      <p className="lede">
+        Start with 5 tiles and 100 scrabble-bucks. Each round a new tile goes up
+        for auction, and every bot has one second to submit a sealed bid. The
+        highest bidder buys the new tile.
+        <br />
+        Play completed words to earn points and more currency.
+      </p>
+      <p className="lede">Be fast, bid wisely, highest score wins.</p>
+      <div className="hero-actions">
+        <Link to="/team/new" className="button">
+          Register a bot
+        </Link>
+        <Link to="/docs" className="button quiet">
+          How to write a bot
+        </Link>
+      </div>
+      <div className="hero-stats">
+        <span>
+          <b>{bots}</b>
+          {plural(bots, "bot", "bots")} registered
+        </span>
+        <span>
+          <b>{running}</b>
+          {plural(running, "match", "matches")} running
+        </span>
+        <span>
+          <b>{ended}</b>
+          {plural(ended, "match", "matches")} completed
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function IdleCard({
+  lobby,
+  members,
+  now,
+}: {
+  lobby: Lobby | undefined;
+  members: number;
+  now: number;
+}) {
+  const seats = lobby ? lobby.maxSize - members : 0;
+  return (
+    <aside className="live-card idle" aria-label="Next match">
+      <div className="live-head">
+        <span className="live-title">No match running</span>
+      </div>
+      {lobby ? (
+        <p>
+          The next match starts in{" "}
+          <b>{(msUntil(lobby.closesAt, now) / 1000).toFixed(0)}s</b>, with{" "}
+          {seats} {plural(seats, "seat", "seats")} still open.
+        </p>
+      ) : (
+        <p>A new lobby opens when the next match is scheduled.</p>
+      )}
+    </aside>
   );
 }
 
@@ -293,35 +188,12 @@ function LiveCard({
   match: Match;
   auction: Auction | undefined;
   standings: MatchParticipant[];
-  racks: ReturnType<typeof reconstructRacks>;
+  racks: Map<bigint, PublicRack>;
   plays: WordPlay[];
   others: Match[];
-  botName: (botId: bigint) => string;
+  botName: BotNames;
   now: number;
 }) {
-  const msLeft = auction
-    ? Math.max(0, fmtTimestamp(auction.closesAt) - now)
-    : 0;
-  const drawn = BAG_SIZE - match.bagTotal;
-
-  // Each bot's latest word, while it's still fresh. Freshness is timed from
-  // when this browser first saw the play rather than from `playedAt`, because
-  // the client's clock can drift from the server's by a second or more, which
-  // is most of the fade.
-  const firstSeen = useRef(new Map<string, number>());
-  const recentWord = new Map<string, { play: WordPlay; age: number }>();
-  for (const play of plays) {
-    const id = String(play.id);
-    if (!firstSeen.current.has(id)) firstSeen.current.set(id, now);
-    const age = now - firstSeen.current.get(id)!;
-    const stale = now - fmtTimestamp(play.playedAt) > WORD_STALE_MS;
-    const key = String(play.botId);
-    const prev = recentWord.get(key);
-    if (age < WORD_FADE_MS && !stale && (!prev || play.id > prev.play.id)) {
-      recentWord.set(key, { play, age });
-    }
-  }
-
   return (
     <aside className="live-card" aria-label="Live match">
       <div className="live-head">
@@ -339,49 +211,23 @@ function LiveCard({
             <span className="tile-slot" />
           )}
           <span className="countdown">
-            {auction ? `${(msLeft / 1000).toFixed(1)}s` : "—"}
+            {auction
+              ? `${(msUntil(auction.closesAt, now) / 1000).toFixed(1)}s`
+              : "—"}
           </span>
         </div>
-        <ol className="live-standings">
-          {standings.slice(0, 3).map((p) => {
-            const tiles = rackTiles(racks, p.botId);
-            const recent = recentWord.get(String(p.botId));
-            return (
-              <li key={String(p.id)}>
-                <div className="live-who">
-                  <span className="live-name">{botName(p.botId)}</span>
-                  <Rack {...tiles} className="live-rack" />
-                </div>
-                <div className="live-score">
-                  <span className="live-points">{String(p.score)}</span>
-                  {recent && (
-                    // Keyed by play, so a new word starts its own fade.
-                    <span
-                      key={String(recent.play.id)}
-                      className="live-word"
-                      style={{
-                        animationDuration: `${WORD_FADE_MS}ms`,
-                      }}
-                    >
-                      <TileWord word={recent.play.word} />
-                      <span className="live-word-points">
-                        +{String(recent.play.totalReward)}
-                      </span>
-                    </span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <Standings
+          participants={standings}
+          racks={racks}
+          plays={plays}
+          botName={botName}
+          now={now}
+          limit={3}
+        />
       </div>
-      <div className="bag-bar">
-        <div style={{ width: `${(drawn / BAG_SIZE) * 100}%` }} />
-      </div>
+      <BagBar bagTotal={match.bagTotal} />
       <div className="live-foot">
-        <span className="status">
-          {drawn} of {BAG_SIZE} tiles drawn
-        </span>
+        <BagCount bagTotal={match.bagTotal} />
         <Link to={`/matches/${match.id}`} className="button quiet">
           Watch match
         </Link>
@@ -398,5 +244,130 @@ function LiveCard({
         </div>
       )}
     </aside>
+  );
+}
+
+function NextMatch({
+  lobby,
+  members,
+  bots,
+  now,
+}: {
+  lobby: Lobby | undefined;
+  members: LobbyMember[];
+  bots: Bot[];
+  now: number;
+}) {
+  if (!lobby) {
+    return (
+      <Panel title="Next match">
+        <div className="secondary">No open lobby right now.</div>
+      </Panel>
+    );
+  }
+  const openSeats = Math.max(0, lobby.maxSize - members.length);
+  return (
+    <Panel title="Next match">
+      <div className="lobby-head">
+        <div>
+          <div className="lobby-fill">
+            {members.length} of {lobby.maxSize} seats filled
+          </div>
+          <div className="secondary">
+            Match #{String(lobby.id)} · {lobby.auctionType.tag.toLowerCase()}{" "}
+            auction
+          </div>
+        </div>
+        <div>
+          <div className="lobby-timer">
+            {(msUntil(lobby.closesAt, now) / 1000).toFixed(0)}s
+          </div>
+          <div className="secondary">until it starts anyway</div>
+        </div>
+      </div>
+      <div className="seats">
+        {members.map((lm) => {
+          const bot = bots.find((b) => b.id === lm.botId);
+          const sim = !!bot?.isSimulated;
+          return (
+            <span
+              key={String(lm.id)}
+              className={sim ? "seat sim" : "seat"}
+              title={sim ? "simulated" : "real bot"}
+            >
+              {bot?.name ?? `#${lm.botId}`}
+            </span>
+          );
+        })}
+        {Array.from({ length: openSeats }, (_, i) => (
+          <span key={`empty-${i}`} className="seat empty">
+            open seat
+          </span>
+        ))}
+      </div>
+      <p className="secondary">
+        The match starts when the lobby fills with real bots, or when the timer
+        runs out. Empty seats are filled with simulated bots.
+      </p>
+    </Panel>
+  );
+}
+
+function RecentResults({
+  ended,
+  standingsOf,
+  botName,
+}: {
+  ended: Match[];
+  standingsOf: (m: Match) => MatchParticipant[];
+  botName: BotNames;
+}) {
+  return (
+    <Panel title="Recent results">
+      {ended.length === 0 ? (
+        <div className="secondary">No completed matches yet.</div>
+      ) : (
+        <table className="results">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Winner</th>
+              <th className="num">Points</th>
+              <th className="num">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ended.slice(0, 6).map((m) => {
+              const { top, winners, runnerUp } = matchOutcome(standingsOf(m));
+              return (
+                <tr key={String(m.id)}>
+                  <td>
+                    <Link to={`/matches/${m.id}`}>#{String(m.id)}</Link>
+                  </td>
+                  <td className="results-winner">
+                    {winners.length === 0
+                      ? "—"
+                      : winners.map((w) => botName(w.botId)).join(" & ")}
+                  </td>
+                  <td className="num">{String(top)}</td>
+                  <td className="num">
+                    {winners.length > 1
+                      ? "tie"
+                      : runnerUp
+                        ? `+${top - runnerUp.score}`
+                        : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {ended.length > 6 && (
+        <Link to="/matches" className="panel-more">
+          All {ended.length} results
+        </Link>
+      )}
+    </Panel>
   );
 }

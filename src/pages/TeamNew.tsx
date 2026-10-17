@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useConn } from "../connection";
-import type { Team } from "../module_bindings/types";
+import { humanLinkOf, myTeam } from "../data";
+import { PageHeader, Panel } from "../ui";
 
 type Mode = "create" | "join";
 
 export default function TeamNew() {
-  const { conn, identity, version } = useConn();
-  void version;
+  const { conn, identity } = useConn();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("create");
   const [teamName, setTeamName] = useState("");
@@ -16,106 +16,89 @@ export default function TeamNew() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const link =
-    conn && identity ? conn.db.humanLink.web_identity.find(identity) : null;
-  const linked = !!link;
-
-  const allTeams: Team[] = [];
-  if (conn) for (const t of conn.db.team.iter()) allTeams.push(t);
+  const allTeams = conn ? [...conn.db.team.iter()] : [];
   allTeams.sort((a, b) => a.name.localeCompare(b.name));
 
-  function create() {
+  // Call the reducer, then give it a moment and check whether we're now on a
+  // team. The reducers report failure only by not changing anything.
+  function submit(call: () => void, failure: string) {
     if (!conn) return;
+    setBusy(true);
+    setError(null);
+    call();
+    setTimeout(() => {
+      if (myTeam(conn)) navigate("/team");
+      else {
+        setError(failure);
+        setBusy(false);
+      }
+    }, 800);
+  }
+
+  function create() {
     if (!teamName.trim() || !botName.trim()) {
       setError("Team and bot names required.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    conn.reducers.createTeam({
-      teamName: teamName.trim(),
-      botName: botName.trim(),
-    });
-    setTimeout(() => {
-      const team = conn.db.myTeam.iter().next().value;
-      if (team) navigate("/team");
-      else {
-        setError(
-          "Failed to create team — name taken, or you're already on one?",
-        );
-        setBusy(false);
-      }
-    }, 800);
+    submit(
+      () =>
+        conn?.reducers.createTeam({
+          teamName: teamName.trim(),
+          botName: botName.trim(),
+        }),
+      "Failed to create team — name taken, or you're already on one?",
+    );
   }
 
   function join() {
-    if (!conn) return;
     if (!joinName.trim()) {
       setError("Pick a team to join.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    conn.reducers.joinTeam({ teamName: joinName.trim() });
-    setTimeout(() => {
-      const team = conn.db.myTeam.iter().next().value;
-      if (team) navigate("/team");
-      else {
-        setError(
-          "Failed to join — team doesn't exist, or you're already on one?",
-        );
-        setBusy(false);
-      }
-    }, 800);
+    submit(
+      () => conn?.reducers.joinTeam({ teamName: joinName.trim() }),
+      "Failed to join — team doesn't exist, or you're already on one?",
+    );
   }
 
-  if (!linked) {
+  if (!humanLinkOf(conn, identity)) {
     return (
       <>
-        <div className="header full">
-          <h1>Link your account first</h1>
-        </div>
-        <section className="panel full">
+        <PageHeader title="Link your account first" />
+        <Panel full>
           <p>
             Your team is bound to your spacetimedb.com identity so you can
             manage it from either the website or the CLI. Visit the{" "}
             <Link to="/account">Account page</Link> for one-time linking
             instructions.
           </p>
-          <div style={{ marginTop: 12 }}>
-            <Link
-              to="/account"
-              className="button"
-              style={{ display: "inline-block", textDecoration: "none" }}
-            >
+          <div className="actions">
+            <Link to="/account" className="button">
               Go to /account →
             </Link>
           </div>
-        </section>
+        </Panel>
       </>
     );
   }
 
   return (
     <>
-      <div className="header full">
-        <h1>{mode === "create" ? "Create a team" : "Join a team"}</h1>
-        <span>
-          <button
-            className="button"
-            onClick={() => {
-              setMode(mode === "create" ? "join" : "create");
-              setError(null);
-            }}
-          >
-            {mode === "create"
-              ? "Join an existing team →"
-              : "← Create new instead"}
-          </button>
-        </span>
-      </div>
+      <PageHeader title={mode === "create" ? "Create a team" : "Join a team"}>
+        <button
+          className="button"
+          onClick={() => {
+            setMode(mode === "create" ? "join" : "create");
+            setError(null);
+          }}
+        >
+          {mode === "create"
+            ? "Join an existing team →"
+            : "← Create new instead"}
+        </button>
+      </PageHeader>
 
-      <section className="panel full">
+      <Panel full>
         {mode === "create" ? (
           <>
             <p>
@@ -123,37 +106,23 @@ export default function TeamNew() {
               be the team's Owner. After creating, you'll mint a credential to
               plug into your bot.
             </p>
-            <div style={rowStyle}>
+            <div className="field-row">
               <label>Team name</label>
               <input
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                style={inputStyle}
-                disabled={!linked || busy}
+                disabled={busy}
                 placeholder="e.g. The Vowel Movement"
               />
             </div>
-            <div style={rowStyle}>
+            <div className="field-row">
               <label>Bot name</label>
               <input
                 value={botName}
                 onChange={(e) => setBotName(e.target.value)}
-                style={inputStyle}
-                disabled={!linked || busy}
+                disabled={busy}
                 placeholder="e.g. alice"
               />
-            </div>
-            {error && (
-              <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>
-            )}
-            <div style={{ marginTop: 16 }}>
-              <button
-                className="button"
-                onClick={create}
-                disabled={!linked || busy}
-              >
-                {busy ? "Creating…" : "Create team"}
-              </button>
             </div>
           </>
         ) : (
@@ -162,13 +131,12 @@ export default function TeamNew() {
               Joining an existing team makes you a Member. You'll be able to
               mint credentials for the team's bot and play with it.
             </p>
-            <div style={rowStyle}>
+            <div className="field-row">
               <label>Team name</label>
               <input
                 value={joinName}
                 onChange={(e) => setJoinName(e.target.value)}
-                style={inputStyle}
-                disabled={!linked || busy}
+                disabled={busy}
                 placeholder="exact team name"
                 list="existing-teams"
               />
@@ -178,57 +146,38 @@ export default function TeamNew() {
                 ))}
               </datalist>
             </div>
-            {error && (
-              <div style={{ color: "var(--warn)", marginTop: 12 }}>{error}</div>
-            )}
-            <div style={{ marginTop: 16 }}>
-              <button
-                className="button"
-                onClick={join}
-                disabled={!linked || busy}
-              >
-                {busy ? "Joining…" : "Join team"}
-              </button>
-            </div>
-            {allTeams.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <div className="secondary" style={{ marginBottom: 6 }}>
-                  Existing teams:
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {allTeams.map((t) => (
-                    <button
-                      key={String(t.id)}
-                      className="button"
-                      style={{ fontSize: 12 }}
-                      onClick={() => setJoinName(t.name)}
-                      disabled={busy}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
-      </section>
+        {error && <p className="error field-error">{error}</p>}
+        <div className="actions">
+          {mode === "create" ? (
+            <button className="button" onClick={create} disabled={busy}>
+              {busy ? "Creating…" : "Create team"}
+            </button>
+          ) : (
+            <button className="button" onClick={join} disabled={busy}>
+              {busy ? "Joining…" : "Join team"}
+            </button>
+          )}
+        </div>
+        {mode === "join" && allTeams.length > 0 && (
+          <>
+            <span className="caption">Existing teams:</span>
+            <div className="actions">
+              {allTeams.map((t) => (
+                <button
+                  key={String(t.id)}
+                  className="button small"
+                  onClick={() => setJoinName(t.name)}
+                  disabled={busy}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
     </>
   );
 }
-
-const rowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  marginTop: 12,
-};
-const inputStyle: React.CSSProperties = {
-  background: "var(--panel)",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "6px 10px",
-  flex: 1,
-  maxWidth: 360,
-};

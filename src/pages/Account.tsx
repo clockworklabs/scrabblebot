@@ -1,79 +1,48 @@
 import { Link } from "react-router-dom";
 import { useConn } from "../connection";
+import { humanLinkOf, myTeam } from "../data";
+import { fmtDateTime } from "../util";
+import { PageHeader, Panel } from "../ui";
 
 export default function Account() {
-  const { conn, identity, version, dbName } = useConn();
-  void version;
+  const { conn, identity, dbName } = useConn();
 
   if (!conn || !identity) {
     return (
       <>
-        <div className="header full">
-          <h1>Your account</h1>
-        </div>
-        <section className="panel full">
+        <PageHeader title="Your account" />
+        <Panel full>
           <p className="secondary">Connecting…</p>
-        </section>
+        </Panel>
       </>
     );
   }
 
   const webHex = identity.toHexString();
-  const link = conn.db.humanLink.web_identity.find(identity);
-  const isLinked = !!link;
-  const team = conn.db.myTeam.iter().next().value;
+  const link = humanLinkOf(conn, identity);
+  const team = myTeam(conn);
 
   return (
     <>
-      <div className="header full">
-        <h1>Your account</h1>
-        <span className="status">{isLinked ? "linked" : "anonymous"}</span>
-      </div>
+      <PageHeader title="Your account" status={link ? "linked" : "anonymous"} />
 
-      <section className="panel full">
-        <h2>Web identity</h2>
-        <div className="secondary" style={{ marginBottom: 4 }}>
-          This browser is connected as:
-        </div>
-        <code style={{ wordBreak: "break-all" }}>{webHex}</code>
-      </section>
+      <Panel full title="Web identity">
+        <span className="caption">This browser is connected as:</span>
+        <code className="code-block">{webHex}</code>
+      </Panel>
 
-      {!isLinked && (
-        <section className="panel full">
-          <h2>Link your spacetimedb.com account</h2>
-          <p>
-            Connect this browser to your <code>spacetime login</code> identity
-            so you can manage a team and bot from either the website or the
-            command line.
-          </p>
-          <pre style={preStyle}>
-            spacetime call {dbName} connect_id '["0x{webHex}"]'
-          </pre>
-          <p className="secondary">
-            Run that in any terminal where <code>spacetime login</code> is
-            configured. Then refresh this page.
-          </p>
-        </section>
-      )}
-
-      {isLinked && (
+      {link ? (
         <>
-          <section className="panel">
-            <h2>Linked human identity</h2>
-            <code style={{ wordBreak: "break-all" }}>
-              {link!.humanIdentity.toHexString()}
+          <Panel title="Linked human identity">
+            <code className="code-block">
+              {link.humanIdentity.toHexString()}
             </code>
-            <div className="secondary" style={{ marginTop: 8 }}>
-              Linked at{" "}
-              {new Date(
-                Number(link!.linkedAt.__timestamp_micros_since_unix_epoch__) /
-                  1000,
-              ).toLocaleString()}
+            <div className="secondary">
+              Linked at {fmtDateTime(link.linkedAt)}
             </div>
-          </section>
+          </Panel>
 
-          <section className="panel">
-            <h2>Team</h2>
+          <Panel title="Team">
             {team ? (
               <>
                 <div className="row">
@@ -99,19 +68,24 @@ export default function Account() {
                 <Link to="/team/new">Create one →</Link>
               </p>
             )}
-          </section>
+          </Panel>
         </>
+      ) : (
+        <Panel full title="Link your spacetimedb.com account">
+          <p>
+            Connect this browser to your <code>spacetime login</code> identity
+            so you can manage a team and bot from either the website or the
+            command line.
+          </p>
+          <pre className="code-block">
+            spacetime call {dbName} connect_id '["0x{webHex}"]'
+          </pre>
+          <p className="secondary">
+            Run that in any terminal where <code>spacetime login</code> is
+            configured. Then refresh this page.
+          </p>
+        </Panel>
       )}
     </>
   );
 }
-
-const preStyle: React.CSSProperties = {
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: 12,
-  overflow: "auto",
-  fontSize: 13,
-  wordBreak: "break-all",
-};

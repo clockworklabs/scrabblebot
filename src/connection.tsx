@@ -4,9 +4,9 @@ import { useAuth } from "react-oidc-context";
 import { DbConnection } from "./module_bindings";
 import type { Identity } from "spacetimedb";
 
-const HOST =
+export const HOST =
   import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
-const DB_NAME = import.meta.env.VITE_STDB_DB ?? "scrabblebot";
+export const DB_NAME = import.meta.env.VITE_STDB_DB ?? "scrabblebot";
 
 interface Ctx {
   conn: DbConnection | null;

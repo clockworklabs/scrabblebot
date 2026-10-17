@@ -1,27 +1,20 @@
 import { Link } from "react-router-dom";
 import { useConn } from "../connection";
-import type { Match, Bot } from "../module_bindings/types";
-import { botName } from "../util";
+import { botNames, standingsByMatch } from "../data";
+import { PageHeader, Panel } from "../ui";
 
 export default function Matches() {
-  const { conn, version } = useConn();
-  void version;
-  const matches: Match[] = [];
-  const bots: Bot[] = [];
-  if (conn) {
-    for (const m of conn.db.matchState.iter()) matches.push(m);
-    for (const b of conn.db.bot.iter()) bots.push(b);
-  }
+  const { conn } = useConn();
+  const matches = conn ? [...conn.db.matchState.iter()] : [];
   matches.sort((a, b) => Number(b.id - a.id));
+  const standings = standingsByMatch(conn);
+  const botName = botNames(conn);
 
   return (
     <>
-      <div className="header full">
-        <h1>Matches</h1>
-        <span className="status">{matches.length} total</span>
-      </div>
+      <PageHeader title="Matches" status={`${matches.length} total`} />
 
-      <section className="panel full table-scroll">
+      <Panel full className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -36,14 +29,8 @@ export default function Matches() {
           </thead>
           <tbody>
             {matches.map((m) => {
-              const participants = conn
-                ? Array.from(conn.db.matchParticipant.iter()).filter(
-                    (p) => p.matchId === m.id,
-                  )
-                : [];
-              const top = participants.sort((a, b) =>
-                Number(b.score - a.score),
-              )[0];
+              const participants = standings.get(m.id) ?? [];
+              const top = participants[0];
               return (
                 <tr key={String(m.id)}>
                   <td>
@@ -55,9 +42,7 @@ export default function Matches() {
                   <td>{m.bagTotal}</td>
                   <td>{participants.length}</td>
                   <td>
-                    {top
-                      ? `${botName(bots, top.botId)} (${String(top.score)})`
-                      : "—"}
+                    {top ? `${botName(top.botId)} (${String(top.score)})` : "—"}
                   </td>
                 </tr>
               );
@@ -65,11 +50,11 @@ export default function Matches() {
           </tbody>
         </table>
         {matches.length === 0 && (
-          <div className="secondary" style={{ padding: 12 }}>
+          <div className="empty">
             No matches yet. Go to <Link to="/admin">Admin</Link> to start one.
           </div>
         )}
-      </section>
+      </Panel>
     </>
   );
 }

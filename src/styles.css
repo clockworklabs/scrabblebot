@@ -228,6 +228,7 @@ pre {
   border-radius: 8px;
   padding: 16px 24px 24px;
   min-width: 0;
+  height: auto;
 }
 /* Guide tagline: mono, uppercase, +8%. */
 .panel h2 {
@@ -242,6 +243,92 @@ pre {
 
 .secondary {
   color: var(--muted);
+  font-size: 13px;
+}
+.panel h2:not(:first-child) {
+  margin-top: 16px;
+}
+
+/* A note standing in for an empty table or list. */
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 12px;
+}
+.error {
+  color: var(--warn);
+}
+.caption {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0 4px;
+}
+.caption:first-child {
+  margin-top: 0;
+}
+
+/* Copyable text: tokens, identities, commands. */
+.code-block {
+  display: block;
+  margin: 0 0 8px;
+  padding: 12px;
+  overflow: auto;
+  font-size: 13px;
+  word-break: break-all;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.short-id {
+  font-size: 12px;
+}
+
+/* ---------- Forms ---------- */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.field-row input {
+  flex: 1;
+  max-width: 360px;
+}
+.field-row .input-mono {
+  max-width: none;
+  font-family: var(--font-mono);
+}
+.input-num {
+  width: 80px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+}
+.button.small {
+  font-size: 12px;
+}
+.caption + .actions {
+  margin-top: 0;
+}
+.field-error {
+  margin: 12px 0 0;
+}
+
+/* ---------- Tournament ---------- */
+
+.round-group {
+  margin-bottom: 12px;
+}
+.round-group > .secondary {
+  margin-bottom: 4px;
+}
+.round-top {
+  text-align: right;
   font-size: 13px;
 }
 
@@ -364,6 +451,11 @@ select,
 textarea {
   font: inherit;
   font-size: 14px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
 }
 input:focus-visible,
 select:focus-visible,
@@ -685,85 +777,9 @@ label {
   border-radius: 8px;
   border: 1px dashed var(--border-strong);
 }
-.live-standings {
+.live-body .standings {
   flex: 1;
   min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: place;
-}
-.live-standings li {
-  counter-increment: place;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.live-standings li:last-child {
-  border-bottom: none;
-}
-.live-standings li::before {
-  content: counter(place);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  width: 12px;
-}
-.live-who {
-  flex: 1;
-  min-width: 0;
-}
-.live-name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.live-rack {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 6px;
-}
-.live-points {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.live-score {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-/* A word just played: shown under the score, then fades away. */
-.live-word {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  animation-name: word-fade;
-  animation-timing-function: ease-in;
-  animation-fill-mode: forwards;
-}
-.live-word-points {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-/* Fully gone a little before the element is removed, so it never pops. */
-@keyframes word-fade {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  85%,
-  100% {
-    opacity: 0;
-  }
-}
-.live-standings li:first-child .live-points {
-  color: var(--accent);
 }
 .live-foot {
   display: flex;
@@ -892,34 +908,100 @@ label {
   transition: width 300ms ease;
 }
 
-.scoreboard td {
-  padding-top: 10px;
-  padding-bottom: 10px;
-  vertical-align: top;
+/* ---------- Standings ---------- */
+
+.standings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.scoreboard td.num {
-  font-size: 16px;
+.standings li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
 }
-.scoreboard .sb-rank {
-  width: 24px;
+.standings li:first-child {
+  padding-top: 0;
+}
+.standings li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.st-rank {
+  flex: none;
+  width: 16px;
   color: var(--muted);
   font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 24px;
 }
-.scoreboard .sb-name {
+.st-who {
+  flex: 1;
+  min-width: 0;
+}
+.st-name {
+  display: block;
   font-weight: 500;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.scoreboard .sb-rack {
+.st-rack {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
   margin-top: 6px;
 }
-.scoreboard .sb-points {
-  font-weight: 600;
+.st-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
-.scoreboard tr.leading .sb-rank,
-.scoreboard tr.leading .sb-points {
+.st-points {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.st-balance {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.standings li.leading .st-rank,
+.standings li.leading .st-points {
   color: var(--accent);
+}
+/* A word just played: shown under the score, then fades away. */
+.st-word {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  animation-name: word-fade;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+.st-word-points {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* Fully gone a little before the element is removed, so it never pops. */
+@keyframes word-fade {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  85%,
+  100% {
+    opacity: 0;
+  }
 }
 
 /* An ended match puts its outcome where the live tile was. */

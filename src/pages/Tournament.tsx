@@ -1,79 +1,60 @@
 import { Link } from "react-router-dom";
 import { useConn } from "../connection";
-import type {
-  Bot,
-  Tournament as TournamentRow,
-  TournamentEntry,
-  TournamentMatch,
-} from "../module_bindings/types";
+import type { TournamentMatch } from "../module_bindings/types";
+import { botNames, standingsByMatch } from "../data";
+import { PageHeader, Panel } from "../ui";
 
 export default function Tournament() {
-  const { conn, version } = useConn();
-  void version;
-
-  const tournaments: TournamentRow[] = [];
-  if (conn) {
-    for (const t of conn.db.tournament.iter()) tournaments.push(t);
-  }
+  const { conn } = useConn();
+  const tournaments = conn ? [...conn.db.tournament.iter()] : [];
   tournaments.sort((a, b) => Number(b.id - a.id));
   const current = tournaments[0];
 
-  if (!current) {
+  if (!conn || !current) {
     return (
       <>
-        <div className="header full">
-          <h1>Tournament</h1>
-        </div>
-        <section className="panel full">
+        <PageHeader title="Tournament" />
+        <Panel full>
           <p className="secondary">
             No tournament has been started. Head to{" "}
             <Link to="/admin">Admin</Link> to launch one.
           </p>
-        </section>
+        </Panel>
       </>
     );
   }
 
-  const bots: Bot[] = [];
-  const entries: TournamentEntry[] = [];
-  const tmatches: TournamentMatch[] = [];
-  if (conn) {
-    for (const b of conn.db.bot.iter()) bots.push(b);
-    for (const e of conn.db.tournamentEntry.iter()) {
-      if (e.tournamentId === current.id) entries.push(e);
-    }
-    for (const m of conn.db.tournamentMatch.iter()) {
-      if (m.tournamentId === current.id) tmatches.push(m);
-    }
-  }
+  const botName = botNames(conn);
+  const standings = standingsByMatch(conn);
+  const entries = [...conn.db.tournamentEntry.iter()].filter(
+    (e) => e.tournamentId === current.id,
+  );
   entries.sort((a, b) => b.swissPoints - a.swissPoints);
+  const tmatches = [...conn.db.tournamentMatch.iter()].filter(
+    (m) => m.tournamentId === current.id,
+  );
   tmatches.sort((a, b) => a.round - b.round || Number(a.id - b.id));
 
   // Group tournament_match rows by (phase, round).
   const grouped = new Map<string, TournamentMatch[]>();
   for (const m of tmatches) {
     const key = `${m.phase.tag}:${m.round}`;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(m);
-  }
-
-  function nameOf(botId: bigint): string {
-    const b = bots.find((x) => x.id === botId);
-    return b?.name ?? `#${botId}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), m]);
   }
 
   return (
     <>
-      <div className="header full">
-        <h1>Tournament #{String(current.id)}</h1>
-        <span className="status">
-          {current.status.tag} · {entries.length} entries ·{" "}
-          {current.auctionType.tag}
-        </span>
-      </div>
+      <PageHeader
+        title={`Tournament #${current.id}`}
+        status={
+          <>
+            {current.status.tag} · {entries.length} entries ·{" "}
+            {current.auctionType.tag}
+          </>
+        }
+      />
 
-      <section className="panel">
-        <h2>Swiss standings</h2>
+      <Panel title="Swiss standings">
         <table>
           <thead>
             <tr>
@@ -87,31 +68,26 @@ export default function Tournament() {
             {entries.map((e, i) => (
               <tr key={String(e.id)}>
                 <td>{i + 1}</td>
-                <td>{nameOf(e.botId)}</td>
+                <td>{botName(e.botId)}</td>
                 <td className="num">{e.swissPoints}</td>
                 <td>{e.eliminated ? "eliminated" : "in"}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <h2>Bracket / rounds</h2>
-        {Array.from(grouped.entries()).map(([key, group]) => {
+      <Panel title="Bracket / rounds">
+        {[...grouped.entries()].map(([key, group]) => {
           const [phase, round] = key.split(":");
           return (
-            <div key={key} style={{ marginBottom: 12 }}>
-              <div className="secondary" style={{ marginBottom: 4 }}>
+            <div key={key} className="round-group">
+              <div className="secondary">
                 {phase} round {round}
               </div>
               {group.map((tm) => {
-                const m = conn?.db.matchState.id.find(tm.matchId);
-                const participants = conn
-                  ? Array.from(conn.db.matchParticipant.iter())
-                      .filter((p) => p.matchId === tm.matchId)
-                      .sort((a, b) => Number(b.score - a.score))
-                  : [];
+                const m = conn.db.matchState.id.find(tm.matchId);
+                const participants = standings.get(tm.matchId) ?? [];
                 return (
                   <div key={String(tm.id)} className="row">
                     <div>
@@ -122,10 +98,10 @@ export default function Tournament() {
                         {m?.status.tag ?? "?"} · {participants.length} bots
                       </div>
                     </div>
-                    <div style={{ textAlign: "right", fontSize: 13 }}>
+                    <div className="round-top">
                       {participants.slice(0, 3).map((p) => (
                         <div key={String(p.id)}>
-                          {nameOf(p.botId)} · {String(p.score)}
+                          {botName(p.botId)} · {String(p.score)}
                         </div>
                       ))}
                     </div>
@@ -138,7 +114,7 @@ export default function Tournament() {
         {tmatches.length === 0 && (
           <div className="secondary">No tournament matches yet.</div>
         )}
-      </section>
+      </Panel>
     </>
   );
 }

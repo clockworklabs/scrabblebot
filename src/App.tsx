@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { ConnectionProvider, useConn } from "./connection";
+import { amAdmin, humanLinkOf } from "./data";
 import { Tile } from "./Tile";
 import Home from "./pages/Home";
 import Matches from "./pages/Matches";
@@ -22,13 +23,8 @@ import Tournament from "./pages/Tournament";
 import Admin from "./pages/Admin";
 
 function Nav() {
-  const { conn, identity, connected, version, dbName } = useConn();
-  void version;
-  const link =
-    conn && identity ? conn.db.humanLink.web_identity.find(identity) : null;
-  const linked = !!link;
-  const humanShort = link ? link.humanIdentity.toHexString().slice(0, 8) : null;
-  const isAdmin = !!conn?.db.myAdmin.iter().next().value;
+  const { conn, identity, connected, dbName } = useConn();
+  const link = humanLinkOf(conn, identity);
 
   // On narrow screens the links scroll sideways; keep the current page's
   // link in view so the underline isn't hidden off the edge.
@@ -53,16 +49,16 @@ function Nav() {
           <NavLink to="/tournament">Tournament</NavLink>
           <NavLink to="/team">Team</NavLink>
           <NavLink to="/docs">Docs</NavLink>
-          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
+          {amAdmin(conn) && <NavLink to="/admin">Admin</NavLink>}
         </div>
         <span className="conn-state">
           <span title={connected ? "Connected" : "Disconnected"}>
             <span className={connected ? "conn-dot on" : "conn-dot"} />
             <span className="conn-db">{dbName}</span>
           </span>
-          {linked ? (
+          {link ? (
             <Link to="/account" title="Linked to spacetimedb.com identity">
-              linked as {humanShort}…
+              linked as {link.humanIdentity.toHexString().slice(0, 8)}…
             </Link>
           ) : (
             <Link to="/account" className="link-cta">
