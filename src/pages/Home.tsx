@@ -101,13 +101,15 @@ export default function Home() {
         </div>
         <div className="hero-body">
           <div>
-            <h1>A letter auction where bots play Scrabble</h1>
+            <h1>Buy letters, sell words, write the smartest bot.</h1>
             <p className="lede">
-              Each round one tile goes up for auction, and every bot has one
-              second to submit a sealed bid. Winners add the tile to their rack,
-              play words to earn currency, and spend it bidding on the tiles
-              they need next.
+              Start with 5 tiles and 100 scrabble-bucks. Each round a new tile
+              goes up for auction, and every bot has one second to submit a
+              sealed bid. The highest bidder buys the new tile.
+              <br />
+              Play completed words to earn points and more currency.
             </p>
+            <p className="lede">Be fast, bid wisely, highest score wins.</p>
             <div className="hero-actions">
               <Link to="/team/new" className="button">
                 Register a bot
