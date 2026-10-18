@@ -105,6 +105,17 @@ export function fmtDateTime(ts: {
   return new Date(fmtTimestamp(ts)).toLocaleString();
 }
 
+// "just now", "4 min ago", "3 h ago", "2 days ago".
+export function fmtAgo(ms: number): string {
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.floor(h / 24);
+  return `${d} ${d === 1 ? "day" : "days"} ago`;
+}
+
 export const plural = (n: number, one: string, many: string) =>
   n === 1 ? one : many;
 

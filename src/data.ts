@@ -53,6 +53,22 @@ export function matchHistory(
   return { results, plays };
 }
 
+// The highest-scoring word played in each match. On a tie, the first one
+// played gets the credit.
+export function bestWords(conn: DbConnection | null): Map<bigint, WordPlay> {
+  const best = new Map<bigint, WordPlay>();
+  if (!conn) return best;
+  for (const p of conn.db.wordPlay.iter()) {
+    const prev = best.get(p.matchId);
+    if (!prev || betterPlay(p, prev)) best.set(p.matchId, p);
+  }
+  return best;
+}
+
+export const betterPlay = (a: WordPlay, b: WordPlay) =>
+  a.totalReward > b.totalReward ||
+  (a.totalReward === b.totalReward && a.id < b.id);
+
 // The auction currently taking bids in each match.
 export function openAuctions(conn: DbConnection | null): Map<bigint, Auction> {
   const byMatch = new Map<bigint, Auction>();

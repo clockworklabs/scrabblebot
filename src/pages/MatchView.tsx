@@ -9,6 +9,7 @@ import type {
   WordPlay,
 } from "../module_bindings/types";
 import {
+  betterPlay,
   botNames,
   matchHistory,
   openAuctions,
@@ -231,7 +232,7 @@ function MatchResult({
 }) {
   const { top, winners, runnerUp } = matchOutcome(participants);
   const best = plays.reduce<WordPlay | null>(
-    (acc, p) => (acc === null || p.totalReward > acc.totalReward ? p : acc),
+    (acc, p) => (acc === null || betterPlay(p, acc) ? p : acc),
     null,
   );
   return (

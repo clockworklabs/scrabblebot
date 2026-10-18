@@ -1301,3 +1301,97 @@ label {
     white-space: nowrap;
   }
 }
+
+/* ---------- Match list ---------- */
+
+.match-list td {
+  vertical-align: top;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.ml-id,
+.ml-winner {
+  line-height: 22px;
+}
+.ml-id {
+  font-weight: 500;
+}
+.ml-sub {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ml-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ml-winner {
+  font-weight: 500;
+}
+.match-list td.ml-points {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.ml-word-points {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.match-list tr.live td {
+  background: var(--accent-10);
+}
+.match-list tr.live td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 10px;
+}
+.match-list tr.live td:last-child {
+  padding-right: 10px;
+}
+.ml-more {
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .ml-opt,
+  .ml-round {
+    display: none;
+  }
+  /* Stack each match: id beside the winner, best word beneath. */
+  .match-list thead {
+    display: none;
+  }
+  .match-list tr {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    column-gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .match-list tbody tr:last-child {
+    border-bottom: none;
+  }
+  .match-list td,
+  .match-list tr.live td {
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
+  .match-list td:last-child {
+    grid-column: 2;
+    margin-top: 8px;
+  }
+  .match-list tr.live {
+    background: var(--accent-10);
+    box-shadow: inset 2px 0 0 var(--accent);
+    padding-left: 10px;
+  }
+}
