@@ -115,9 +115,11 @@ fn sims_bid_as_soon_as_an_auction_opens() {
     assert_eq!(bids.len(), sims.len());
     for (bot_id, amount) in bids {
         let strategy = ctx.db.bot().id().find(bot_id).unwrap().strategy;
-        assert_eq!(
-            amount,
-            decide_bid(&strategy, &auction.letter, STARTING_BALANCE)
+        let bid_with = |jitter| decide_bid(&strategy, &auction.letter, STARTING_BALANCE, jitter);
+        let range = bid_with(-SIM_BID_JITTER)..=bid_with(SIM_BID_JITTER);
+        assert!(
+            range.contains(&amount),
+            "{strategy:?} bid {amount}, outside {range:?}"
         );
     }
 }
@@ -241,22 +243,30 @@ fn first_price_winner_pays_their_own_bid() {
 }
 
 #[test]
-fn ties_go_to_the_earliest_bid() {
+fn ties_are_broken_at_random() {
     for auction_type in [AuctionType::Vickrey, AuctionType::FirstPrice] {
         let ctx = new_db();
         let [ann, ben, _] = three_bots(&ctx);
         let m = start_match(&ctx, auction_type.clone(), &[ann, ben]);
-        let a = current_auction(&ctx, m).id;
 
-        bid(&ctx, "Ben", a, 5).unwrap();
-        bid(&ctx, "Ann", a, 5).unwrap();
-        tick(&ctx, m);
+        let mut winners = std::collections::HashSet::new();
+        for _ in 0..20 {
+            let a = current_auction(&ctx, m).id;
+            bid(&ctx, "Ben", a, 1).unwrap();
+            bid(&ctx, "Ann", a, 1).unwrap();
+            ctx.clock.advance(spacetimedb::TimeDuration::from_micros(
+                AUCTION_DURATION_MS as i64 * 1000,
+            ));
+            tick(&ctx, m);
 
-        let r = result_of(&ctx, a);
+            let r = result_of(&ctx, a);
+            assert_eq!(r.paid, 1, "{auction_type:?}");
+            winners.insert(r.winner_bot_id.unwrap());
+        }
         assert_eq!(
-            (r.winner_bot_id, r.paid),
-            (Some(ben), 5),
-            "{auction_type:?}"
+            winners,
+            [ann, ben].into(),
+            "{auction_type:?}: both tied bidders win sometimes"
         );
     }
 }

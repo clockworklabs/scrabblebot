@@ -142,28 +142,41 @@ fn find_best_playable_ignores_non_tiles() {
 #[test]
 fn sim_bid_strategies() {
     // E is worth 1, Q 10.
-    assert_eq!(decide_bid(&BotStrategy::Human, "Q", 100), 0);
+    assert_eq!(decide_bid(&BotStrategy::Human, "Q", 100, 0), 0);
     assert_eq!(
-        decide_bid(&BotStrategy::Cheapskate, "E", 100),
+        decide_bid(&BotStrategy::Cheapskate, "E", 100, 0),
         1,
         "never below 1"
     );
-    assert_eq!(decide_bid(&BotStrategy::Cheapskate, "Q", 100), 9);
-    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 100), 10);
+    assert_eq!(decide_bid(&BotStrategy::Cheapskate, "Q", 100, 0), 9);
+    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 100, 0), 10);
     assert_eq!(
-        decide_bid(&BotStrategy::Aggressive, "E", 100),
+        decide_bid(&BotStrategy::Aggressive, "E", 100, 0),
         5,
         "vowel premium"
     );
-    assert_eq!(decide_bid(&BotStrategy::Aggressive, "Q", 100), 12);
+    assert_eq!(decide_bid(&BotStrategy::Aggressive, "Q", 100, 0), 12);
+}
+
+#[test]
+fn sim_bid_jitter_shifts_the_base_bid() {
+    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 100, 2), 12);
+    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 100, -2), 8);
+    assert_eq!(
+        decide_bid(&BotStrategy::Cheapskate, "E", 100, -2),
+        1,
+        "never below 1"
+    );
+    assert_eq!(decide_bid(&BotStrategy::Aggressive, "Q", 11, 2), 11);
+    assert_eq!(decide_bid(&BotStrategy::Human, "Q", 100, 2), 0);
 }
 
 #[test]
 fn sim_bids_are_capped_by_balance() {
-    assert_eq!(decide_bid(&BotStrategy::Aggressive, "Q", 7), 7);
-    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 0), 0);
+    assert_eq!(decide_bid(&BotStrategy::Aggressive, "Q", 7, 0), 7);
+    assert_eq!(decide_bid(&BotStrategy::ValueBidder, "Q", 0, 0), 0);
     assert_eq!(
-        decide_bid(&BotStrategy::ValueBidder, "Q", -5),
+        decide_bid(&BotStrategy::ValueBidder, "Q", -5, 0),
         0,
         "never negative"
     );

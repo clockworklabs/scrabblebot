@@ -2203,7 +2203,13 @@ fn close_auction(ctx: &ReducerContext, match_id: u64) {
         .filter(auction_id)
         .collect();
     let mut sorted: Vec<&PendingBid> = bids.iter().filter(|b| b.amount > 0).collect();
-    sorted.sort_by(|a, b| b.amount.cmp(&a.amount).then(a.id.cmp(&b.id)));
+    // Shuffle, then stable-sort by amount, so equal bids land in random
+    // order and ties don't always go to whoever bid first.
+    for i in (1..sorted.len()).rev() {
+        let j = ctx.rng().gen_range(0..=i);
+        sorted.swap(i, j);
+    }
+    sorted.sort_by(|a, b| b.amount.cmp(&a.amount));
 
     let (winner, top_bid, paid) = match (m.auction_type.clone(), sorted.as_slice()) {
         (_, []) => (None, 0, 0),
@@ -2464,17 +2470,23 @@ fn draw_letter(ctx: &ReducerContext, match_id: u64) -> Option<String> {
 
 // ---------- Simulated-bot logic ----------
 
-fn decide_bid(strategy: &BotStrategy, letter: &str, balance: i64) -> i64 {
+// How far a sim's bid may wander either side of its strategy's base bid.
+// Without it, bots sharing a strategy bid identically on every letter.
+const SIM_BID_JITTER: i64 = 2;
+
+// `jitter` is added to the strategy's base bid; callers draw it from
+// `-SIM_BID_JITTER..=SIM_BID_JITTER`.
+fn decide_bid(strategy: &BotStrategy, letter: &str, balance: i64, jitter: i64) -> i64 {
     let c = letter.chars().next().unwrap_or('A');
     let value = letters::letter_value(c) as i64;
     let is_vowel = matches!(c, 'A' | 'E' | 'I' | 'O' | 'U');
-    let bid = match strategy {
+    let base = match strategy {
         BotStrategy::Human => return 0,
-        BotStrategy::Cheapskate => (value - 1).max(1),
+        BotStrategy::Cheapskate => value - 1,
         BotStrategy::ValueBidder => value,
         BotStrategy::Aggressive => value + if is_vowel { 4 } else { 2 },
     };
-    bid.min(balance).max(0)
+    (base + jitter).max(1).min(balance).max(0)
 }
 
 fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
@@ -2491,7 +2503,8 @@ fn simulate_bids(ctx: &ReducerContext, auction: &Auction) {
         if !bot.is_simulated {
             continue;
         }
-        let amount = decide_bid(&bot.strategy, &auction.letter, p.balance);
+        let jitter = ctx.rng().gen_range(-SIM_BID_JITTER..=SIM_BID_JITTER);
+        let amount = decide_bid(&bot.strategy, &auction.letter, p.balance, jitter);
         if amount <= 0 {
             continue;
         }

@@ -42,8 +42,8 @@ schedule them. Bots that finish a match just call `join_lobby()` again.
 
 ## The rules
 
-- **Auction:** 1-second sealed-bid window per letter. Highest bid wins; on
-  ties, the earlier submission wins.
+- **Auction:** 1-second sealed-bid window per letter. Highest bid wins; ties
+  are broken at random.
 - **Payment:** Vickrey by default (winner pays the runner-up's bid; reserve
   1). First-price is configurable per lobby.
 - **Currency:** start at 100 per match. Reward for a word = base score ×
