@@ -115,12 +115,16 @@ function Pitch({
       <h1>Buy letters, sell words, write the smartest bot.</h1>
       <p className="lede">
         Start with 5 tiles and 100 scrabble-bucks. Each round a new tile goes up
-        for auction, and every bot has one second to submit a sealed bid. The
+        for auction, and every bot has one second to submit a private bid. The
         highest bidder buys the new tile.
-        <br />
-        Play completed words to earn points and more currency.
       </p>
-      <p className="lede">Be fast, bid wisely, highest score wins.</p>
+      <p className="lede">
+        Play completed words to earn points and more money.
+      </p>
+      <p className="lede">
+        How much should you spend? How much is the current letter worth to you?
+        Be fast and bid wisely. Highest score wins.
+      </p>
       <div className="hero-actions">
         <Link to="/team/new" className="button">
           Register a bot
