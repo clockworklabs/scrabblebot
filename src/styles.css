@@ -915,19 +915,34 @@ label {
   padding: 0;
   list-style: none;
 }
+/* Each row's height is pinned to its .st-row by script, so it can
+   transition when the row's contents change. */
 .standings li {
+  border-bottom: 1px solid var(--border);
+}
+.standings li:last-child {
+  border-bottom: none;
+}
+/* Clip only while resizing, so tile shadows aren't cut off at rest. */
+.standings li.st-resizing {
+  overflow: hidden;
+}
+.st-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border);
 }
-.standings li:first-child {
+.standings li:first-child .st-row {
   padding-top: 0;
 }
-.standings li:last-child {
-  border-bottom: none;
+.standings li:last-child .st-row {
   padding-bottom: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .standings li {
+    transition: height 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
 }
 .st-rank {
   flex: none;
