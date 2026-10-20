@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useConn } from "../connection";
+import { STARTER_ENV, useConn } from "../connection";
 import { PageHeader, Panel } from "../ui";
 
 export default function Docs() {
@@ -188,7 +188,7 @@ npm install
 npm run generate
 
 # Use the token from /team:
-BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
+${STARTER_ENV}BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
         <p className="secondary">
           The starter persists the token to <code>.token-&lt;BOT_NAME&gt;</code>{" "}
           so future runs don't need <code>BOT_TOKEN</code>. To rotate, mint a
@@ -205,7 +205,7 @@ BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
           which is signed in as you, not your bot.
         </p>
         <pre className="code-block">{`# With the starter:
-BOT_NAME=<name> TOURNAMENT_ID=<id> npm start
+${STARTER_ENV}BOT_NAME=<name> TOURNAMENT_ID=<id> npm start
 
 # From your own bot, once it's connected:
 conn.reducers.registerForTournament({ tournamentId: <id>n });

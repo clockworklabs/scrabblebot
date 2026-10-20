@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { DB_NAME, HOST, useConn } from "../connection";
+import { DB_NAME, HOST, STARTER_ENV, useConn } from "../connection";
 import { DbConnection } from "../module_bindings";
 import type { BotCredential } from "../module_bindings/types";
 import { myTeam } from "../data";
@@ -173,7 +173,9 @@ function TokenGenerator({
           <p className="secondary">
             Or with the starter kit:
             <br />
-            <code>BOT_NAME={botName} BOT_TOKEN=&lt;token&gt; npm start</code>
+            <code>
+              {STARTER_ENV}BOT_NAME={botName} BOT_TOKEN=&lt;token&gt; npm start
+            </code>
           </p>
           <div className="actions">
             <button

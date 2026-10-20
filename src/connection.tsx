@@ -8,6 +8,12 @@ export const HOST =
   import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
 export const DB_NAME = import.meta.env.VITE_STDB_DB ?? "scrabblebot";
 
+// The bot starter connects to `scrabblebot` unless STDB_DB names another
+// database, so the commands this site shows have to name any other one
+// (staging, say), or a bot would connect somewhere its token doesn't work.
+export const STARTER_ENV =
+  DB_NAME === "scrabblebot" ? "" : `STDB_DB=${DB_NAME} `;
+
 interface Ctx {
   conn: DbConnection | null;
   identity: Identity | null;

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useConn } from "../connection";
+import { STARTER_ENV, useConn } from "../connection";
 import type { DbConnection } from "../module_bindings";
 import type {
   Tournament as TournamentRow,
@@ -590,7 +590,8 @@ function RegistrationView({
           bot. With the bot starter:
         </p>
         <code className="code-block">
-          BOT_NAME=&lt;name&gt; TOURNAMENT_ID={String(tournament.id)} npm start
+          {STARTER_ENV}BOT_NAME=&lt;name&gt; TOURNAMENT_ID=
+          {String(tournament.id)} npm start
         </code>
         <p className="secondary">
           More in <Link to="/docs">the bot guide</Link>.
