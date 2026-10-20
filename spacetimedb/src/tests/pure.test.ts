@@ -83,15 +83,9 @@ test("dictionary_rejects_nonwords_and_junk", () => {
 
 test("wordlist_is_sorted_uppercase_and_unique", () => {
   // `isValidWord` binary-searches the raw file, so this must hold.
-  for (let i = 1; i < words.length; i++) {
-    expect(
-      words[i - 1]! < words[i]!,
-      `out of order: ${words[i - 1]} >= ${words[i]}`,
-    ).toBe(true);
-  }
-  for (const w of words) {
-    expect(/^[A-Z]+$/.test(w), `bad entry ${JSON.stringify(w)}`).toBe(true);
-  }
+  const outOfOrder = words.findIndex((w, i) => i > 0 && !(words[i - 1]! < w));
+  expect(outOfOrder, `out of order at ${words[outOfOrder]}`).toBe(-1);
+  expect(words.filter((w) => !/^[A-Z]+$/.test(w))).toEqual([]);
 });
 
 test("find_best_playable_picks_a_longest_word", () => {
