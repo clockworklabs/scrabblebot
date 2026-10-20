@@ -63,7 +63,27 @@ export function addEntry(ctx: Ctx, tournament_id: bigint, bot_id: bigint) {
     bot_id,
     swiss_points: 0,
     eliminated: false,
+    total_score: 0n,
+    final_finish_position: undefined,
   });
+}
+
+// How many games the final lasts. The finalists' scores over all of them
+// decide the champion.
+export const FINAL_GAMES = 3;
+
+function compareBigint(a: bigint, b: bigint): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Standings order: Swiss points, then total score, then the lower bot id,
+// so nobody's place depends on the order rows happen to be stored in.
+export function byStanding(a: TournamentEntry, b: TournamentEntry): number {
+  return (
+    b.swiss_points - a.swiss_points ||
+    compareBigint(b.total_score, a.total_score) ||
+    compareBigint(a.bot_id, b.bot_id)
+  );
 }
 
 export function startSwissRound(
@@ -82,7 +102,7 @@ export function startSwissRound(
   if (round === 1) {
     shuffle(ctx, entries);
   } else {
-    sortDescending(entries, (e) => e.swiss_points);
+    entries.sort(byStanding);
   }
   return pairIntoMatches(ctx, t, entries, round, { tag: "Swiss" });
 }
@@ -141,143 +161,185 @@ function matchEnded(ctx: Ctx, match_id: bigint): boolean {
   return ctx.db.match_state.id.find(match_id)?.status.tag === "Ended";
 }
 
-function aggregateFinalScore(
-  ctx: Ctx,
-  tournament_id: bigint,
-  bot_id: bigint,
-): bigint {
-  let total = 0n;
-  const finalMatches = [
-    ...ctx.db.tournament_match.tm_by_tournament.filter(tournament_id),
-  ]
-    .filter((m) => m.phase.tag === "Final")
-    .map((m) => m.match_id);
-  for (const mid of finalMatches) {
-    const p = findParticipant(ctx, mid, bot_id);
-    if (p) {
-      total += p.score;
-    }
-  }
-  return total;
+function aliveEntries(ctx: Ctx, tournament_id: bigint): TournamentEntry[] {
+  return [
+    ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
+  ].filter((e) => !e.eliminated);
 }
 
-function advanceTournament(ctx: Ctx, tournament_id: bigint) {
-  const t = ctx.db.tournament.id.find(tournament_id);
-  if (!t) {
+function finalGames(ctx: Ctx, tournament_id: bigint) {
+  return [
+    ...ctx.db.tournament_match.tm_by_tournament.filter(tournament_id),
+  ].filter((m) => m.phase.tag === "Final");
+}
+
+// Whether one of the tournament's matches is being played.
+export function tournamentMatchRunning(
+  ctx: Ctx,
+  tournament_id: bigint,
+): boolean {
+  return [
+    ...ctx.db.tournament_match.tm_by_tournament.filter(tournament_id),
+  ].some(
+    (m) => ctx.db.match_state.id.find(m.match_id)?.status.tag === "Running",
+  );
+}
+
+// ---------- The finals ----------
+// After the cut the tournament waits for the admin, who starts each
+// elimination match and each game of the final with
+// `start_next_finals_match`, so the finals can be run from a stage.
+
+export function startNextFinalsMatch(ctx: Ctx, t: Tournament): Result<void> {
+  if (t.status.tag !== "Bracket" && t.status.tag !== "Final") {
+    return { err: "The tournament isn't in its finals" };
+  }
+  if (tournamentMatchRunning(ctx, t.id)) {
+    return { err: "A finals match is already being played" };
+  }
+  const roster = aliveEntries(ctx, t.id).map((e) => e.bot_id);
+  let round: number;
+  if (t.status.tag === "Bracket") {
+    round = t.current_round + 1;
+    ctx.db.tournament.id.update({ ...t, current_round: round });
+  } else {
+    round = finalGames(ctx, t.id).length + 1;
+  }
+  const started = startMatchWith(ctx, t.auction_type, roster);
+  if (isErr(started)) {
+    return started;
+  }
+  ctx.db.tournament_match.insert({
+    id: 0n,
+    tournament_id: t.id,
+    match_id: started.ok,
+    round,
+    phase: { tag: t.status.tag },
+  });
+  console.info(
+    `Tournament ${t.id}: ${t.status.tag} match ${round} started (match ${started.ok})`,
+  );
+  return { ok: undefined };
+}
+
+// The Swiss rounds are over: keep the top `top_cut` and wait for the admin
+// to start the finals.
+function cut(ctx: Ctx, t: Tournament) {
+  const ranked = aliveEntries(ctx, t.id).sort(byStanding);
+  ranked.forEach((e, i) => {
+    if (i >= t.top_cut) {
+      ctx.db.tournament_entry.id.update({ ...e, eliminated: true });
+    }
+  });
+  const kept = Math.min(ranked.length, t.top_cut);
+  ctx.db.tournament.id.update({
+    ...t,
+    status: { tag: kept > 2 ? "Bracket" : "Final" },
+    current_round: 0,
+  });
+  console.info(`Tournament ${t.id}: Swiss done, ${kept} go through`);
+}
+
+// Knock out the last-place finisher of an elimination match. A tie for
+// last goes to total score, then the higher bot id, so there's always
+// exactly one, with no replays.
+function knockOutLast(
+  ctx: Ctx,
+  t: Tournament,
+  placed: { bot_id: bigint; score: bigint }[],
+) {
+  const alive = aliveEntries(ctx, t.id);
+  const inMatch = alive.filter((e) =>
+    placed.some((p) => p.bot_id === e.bot_id),
+  );
+  const scoreOf = (e: TournamentEntry) =>
+    placed.find((p) => p.bot_id === e.bot_id)!.score;
+  const worst = inMatch.sort(
+    (a, b) =>
+      compareBigint(scoreOf(a), scoreOf(b)) ||
+      compareBigint(a.total_score, b.total_score) ||
+      compareBigint(b.bot_id, a.bot_id),
+  )[0];
+  if (!worst) {
     return;
   }
-  switch (t.status.tag) {
-    case "Swiss": {
-      if (t.current_round < t.swiss_rounds_total) {
-        startSwissRound(ctx, t.id, t.current_round + 1);
-      } else {
-        const entries = sortDescending(
-          [...ctx.db.tournament_entry.te_by_tournament.filter(t.id)],
-          (e) => e.swiss_points,
-        );
-        const kept = t.top_cut;
-        entries.forEach((e, i) => {
-          if (i >= kept) {
-            ctx.db.tournament_entry.id.update({ ...e, eliminated: true });
-          }
-        });
-        ctx.db.tournament.id.update({
-          ...t,
-          status: { tag: "Bracket" },
-          current_round: 0,
-        });
-        startEliminationRound(ctx, t.id);
-      }
-      break;
-    }
-    case "Bracket": {
-      const remaining = [
-        ...ctx.db.tournament_entry.te_by_tournament.filter(t.id),
-      ].filter((e) => !e.eliminated).length;
-      if (remaining <= 1) {
-        ctx.db.tournament.id.update({
-          ...t,
-          status: { tag: "Ended" },
-          ended_at: ctx.timestamp,
-        });
-      } else if (remaining === 2) {
-        ctx.db.tournament.id.update({
-          ...t,
-          status: { tag: "Final" },
-          current_round: 0,
-        });
-        startFinalGame(ctx, t.id, 1);
-      } else {
-        startEliminationRound(ctx, t.id);
-      }
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-function aliveRoster(ctx: Ctx, tournament_id: bigint): bigint[] {
-  return [...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id)]
-    .filter((e) => !e.eliminated)
-    .map((e) => e.bot_id);
-}
-
-function startEliminationRound(ctx: Ctx, tournament_id: bigint): Result<void> {
-  const t = ctx.db.tournament.id.find(tournament_id);
-  if (!t) {
-    return { err: "Unknown tournament" };
-  }
-  const roster = aliveRoster(ctx, t.id);
-  if (roster.length < 2) {
-    return { ok: undefined };
-  }
-  const next_round = t.current_round + 1;
-  ctx.db.tournament.id.update({ ...t, current_round: next_round });
-  const started = startMatchWith(ctx, t.auction_type, roster);
-  if (isErr(started)) {
-    return started;
-  }
-  ctx.db.tournament_match.insert({
-    id: 0n,
-    tournament_id: t.id,
-    match_id: started.ok,
-    round: next_round,
-    phase: { tag: "Bracket" },
+  ctx.db.tournament_entry.id.update({
+    ...worst,
+    eliminated: true,
+    final_finish_position: alive.length,
   });
-  return { ok: undefined };
+  if (alive.length - 1 <= 2) {
+    ctx.db.tournament.id.update({
+      ...t,
+      status: { tag: "Final" },
+      current_round: 0,
+    });
+  }
+  console.info(
+    `Tournament ${t.id}: bot ${worst.bot_id} out in place ${alive.length}`,
+  );
 }
 
-function startFinalGame(
+// After the last game of the final, rank the finalists by their score over
+// the final's games, then total score, then the lower bot id.
+function crown(ctx: Ctx, t: Tournament) {
+  const games = finalGames(ctx, t.id).map((m) => m.match_id);
+  const finalScore = (bot_id: bigint) =>
+    games.reduce(
+      (sum, match_id) =>
+        sum + (findParticipant(ctx, match_id, bot_id)?.score ?? 0n),
+      0n,
+    );
+  const ranked = aliveEntries(ctx, t.id)
+    .map((e) => ({ entry: e, score: finalScore(e.bot_id) }))
+    .sort(
+      (a, b) =>
+        compareBigint(b.score, a.score) ||
+        compareBigint(b.entry.total_score, a.entry.total_score) ||
+        compareBigint(a.entry.bot_id, b.entry.bot_id),
+    );
+  ranked.forEach(({ entry }, i) => {
+    ctx.db.tournament_entry.id.update({
+      ...entry,
+      eliminated: i > 0,
+      final_finish_position: i + 1,
+    });
+  });
+  const champion = ranked[0]?.entry.bot_id;
+  ctx.db.tournament.id.update({
+    ...t,
+    status: { tag: "Ended" },
+    ended_at: ctx.timestamp,
+    winner_bot_id: champion,
+  });
+  console.info(`Tournament ${t.id} won by bot ${champion}`);
+}
+
+// ---------- Match results ----------
+
+// Swiss points by finishing place, scored against the configured match
+// size so first place is worth the same at every table; places past
+// match_size at an oversized table earn nothing. Bots on the same score
+// share the higher place, as tied leaders all get a win.
+function awardSwissPoints(
   ctx: Ctx,
-  tournament_id: bigint,
-  game_num: number,
-): Result<void> {
-  const t = ctx.db.tournament.id.find(tournament_id);
-  if (!t) {
-    return { err: "Unknown tournament" };
+  t: Tournament,
+  placed: { bot_id: bigint; score: bigint }[],
+) {
+  for (const p of placed) {
+    const place = placed.filter((q) => q.score > p.score).length;
+    const e = entryFor(ctx, t.id, p.bot_id);
+    if (e) {
+      ctx.db.tournament_entry.id.update({
+        ...e,
+        swiss_points: e.swiss_points + Math.max(t.match_size - place, 0),
+      });
+    }
   }
-  const roster = aliveRoster(ctx, t.id);
-  if (roster.length < 2) {
-    return { ok: undefined };
-  }
-  const started = startMatchWith(ctx, t.auction_type, roster);
-  if (isErr(started)) {
-    return started;
-  }
-  ctx.db.tournament_match.insert({
-    id: 0n,
-    tournament_id: t.id,
-    match_id: started.ok,
-    round: game_num,
-    phase: { tag: "Final" },
-  });
-  console.info(`Final game ${game_num} started for tournament ${t.id}`);
-  return { ok: undefined };
 }
 
 // The tournament's part in a match ending: score it, and move the
-// tournament on once its round is over.
+// tournament on.
 export function onTournamentMatchEnded(ctx: Ctx, match_id: bigint) {
   let tm;
   for (const row of ctx.db.tournament_match.tm_by_match.filter(match_id)) {
@@ -288,7 +350,8 @@ export function onTournamentMatchEnded(ctx: Ctx, match_id: bigint) {
     return;
   }
   const t = ctx.db.tournament.id.find(tm.tournament_id);
-  if (!t) {
+  // A tournament that has finished doesn't move on.
+  if (!t || !isUnderway(t)) {
     return;
   }
 
@@ -296,81 +359,43 @@ export function onTournamentMatchEnded(ctx: Ctx, match_id: bigint) {
     [...ctx.db.match_participant.mp_by_match.filter(match_id)],
     (p) => p.score,
   );
+  for (const p of placed) {
+    const e = entryFor(ctx, t.id, p.bot_id);
+    if (e) {
+      ctx.db.tournament_entry.id.update({
+        ...e,
+        total_score: e.total_score + p.score,
+      });
+    }
+  }
 
   switch (tm.phase.tag) {
     case "Swiss": {
-      // Scored against the configured match size, not this table's,
-      // so first place is worth the same at every table. Places past
-      // match_size at an oversized table earn nothing.
-      const n = t.match_size;
-      placed.forEach((p, idx) => {
-        const pts = Math.max(n - idx, 0);
-        const e = entryFor(ctx, t.id, p.bot_id);
-        if (e) {
-          ctx.db.tournament_entry.id.update({
-            ...e,
-            swiss_points: e.swiss_points + pts,
-          });
-        }
-      });
-      break;
-    }
-    case "Bracket": {
-      // Eliminate only the last-place bot.
-      const last = placed[placed.length - 1];
-      if (last) {
-        const e = entryFor(ctx, t.id, last.bot_id);
-        if (e) {
-          ctx.db.tournament_entry.id.update({ ...e, eliminated: true });
-        }
-      }
-      break;
-    }
-    case "Final":
-      // Finals are best-of-3, decided after all 3 games.
-      break;
-  }
-
-  if (tm.phase.tag === "Final") {
-    const finalGamesDone = [
-      ...ctx.db.tournament_match.tm_by_tournament.filter(t.id),
-    ].filter(
-      (m) => m.phase.tag === "Final" && matchEnded(ctx, m.match_id),
-    ).length;
-    if (finalGamesDone < 3) {
-      startFinalGame(ctx, t.id, finalGamesDone + 1);
-    } else {
-      const finalists = [
-        ...ctx.db.tournament_entry.te_by_tournament.filter(t.id),
+      awardSwissPoints(ctx, t, placed);
+      const roundDone = [
+        ...ctx.db.tournament_match.tm_by_tournament.filter(t.id),
       ]
-        .filter((e) => !e.eliminated)
-        .map((e) => e.bot_id);
-      const totals = sortDescending(
-        finalists.map((b) => [b, aggregateFinalScore(ctx, t.id, b)] as const),
-        ([, total]) => total,
-      );
-      const loser = totals[totals.length - 1];
-      if (loser) {
-        const e = entryFor(ctx, t.id, loser[0]);
-        if (e) {
-          ctx.db.tournament_entry.id.update({ ...e, eliminated: true });
+        .filter((m) => m.round === tm.round && m.phase.tag === "Swiss")
+        .every((m) => matchEnded(ctx, m.match_id));
+      if (!roundDone) {
+        return;
+      }
+      if (t.current_round < t.swiss_rounds_total) {
+        startSwissRound(ctx, t.id, t.current_round + 1);
+      } else {
+        cut(ctx, t);
+      }
+      break;
+    }
+    case "Bracket":
+      knockOutLast(ctx, t, placed);
+      break;
+    case "Final":
+      if (finalGames(ctx, t.id).every((m) => matchEnded(ctx, m.match_id))) {
+        if (finalGames(ctx, t.id).length >= FINAL_GAMES) {
+          crown(ctx, t);
         }
       }
-      ctx.db.tournament.id.update({
-        ...t,
-        status: { tag: "Ended" },
-        ended_at: ctx.timestamp,
-      });
-      console.info("Tournament ended");
-    }
-    return;
+      break;
   }
-
-  const roundDone = [...ctx.db.tournament_match.tm_by_tournament.filter(t.id)]
-    .filter((m) => m.round === tm.round && m.phase.tag === tm.phase.tag)
-    .every((m) => matchEnded(ctx, m.match_id));
-  if (!roundDone) {
-    return;
-  }
-  advanceTournament(ctx, t.id);
 }

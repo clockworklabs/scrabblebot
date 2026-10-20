@@ -44,6 +44,7 @@ import {
   heldForTournament,
   isActive,
   requireRegistration,
+  startNextFinalsMatch,
   startSwissRound,
 } from "./tournament";
 
@@ -745,6 +746,7 @@ export const create_tournament = spacetimedb.reducer(
       auction_type,
       created_at: ctx.timestamp,
       ended_at: undefined,
+      winner_bot_id: undefined,
     });
     console.info(`Tournament ${tour.id} created; registration open`);
   },
@@ -873,6 +875,21 @@ export const start_tournament = spacetimedb.reducer(
     console.info(
       `Tournament ${tournament_id} started with ${entries.length} entrants`,
     );
+  },
+);
+
+// Starts the next match of the finals: an elimination match, or the next
+// game of the final. The admin runs these one at a time, so the finals can
+// be played out on a stage.
+export const start_next_finals_match = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    requireAdmin(ctx);
+    const tour = ctx.db.tournament.id.find(tournament_id);
+    if (!tour) {
+      throw new SenderError("Unknown tournament");
+    }
+    orThrow(startNextFinalsMatch(ctx, tour));
   },
 );
 

@@ -24,6 +24,7 @@ import RegisterForTournamentReducer from "../register_for_tournament_reducer";
 import RegisterSimBotsReducer from "../register_sim_bots_reducer";
 import RemoveAdminReducer from "../remove_admin_reducer";
 import SpawnSimulatedBotReducer from "../spawn_simulated_bot_reducer";
+import StartNextFinalsMatchReducer from "../start_next_finals_match_reducer";
 import StartTournamentReducer from "../start_tournament_reducer";
 import SubmitBidReducer from "../submit_bid_reducer";
 import SubmitWordReducer from "../submit_word_reducer";
@@ -47,6 +48,7 @@ export type RegisterForTournamentParams = __Infer<typeof RegisterForTournamentRe
 export type RegisterSimBotsParams = __Infer<typeof RegisterSimBotsReducer>;
 export type RemoveAdminParams = __Infer<typeof RemoveAdminReducer>;
 export type SpawnSimulatedBotParams = __Infer<typeof SpawnSimulatedBotReducer>;
+export type StartNextFinalsMatchParams = __Infer<typeof StartNextFinalsMatchReducer>;
 export type StartTournamentParams = __Infer<typeof StartTournamentReducer>;
 export type SubmitBidParams = __Infer<typeof SubmitBidReducer>;
 export type SubmitWordParams = __Infer<typeof SubmitWordReducer>;

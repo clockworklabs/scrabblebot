@@ -6,6 +6,7 @@ import {
   create_tournament,
   register_sim_bots,
   spawn_simulated_bot,
+  start_next_finals_match,
   start_tournament,
 } from "../index";
 import type {
@@ -90,12 +91,24 @@ function seated(db: Test, matchId: bigint): MatchParticipant[] {
   return [...db.db.match_participant.mp_by_match.filter(matchId)];
 }
 
-/** Play every running match to the end until nothing is left running. */
+/**
+ * Play every running match to the end, and start each finals match as the
+ * admin would, until the tournament finishes.
+ */
 function playOut(db: Test) {
   for (let i = 0; i < 50; i++) {
     const running = runningMatches(db);
     if (running.length === 0) {
-      return;
+      const t = [...db.db.tournament.iter()].find((t) =>
+        ["Bracket", "Final"].includes(t.status.tag),
+      );
+      if (!t) {
+        return;
+      }
+      call(db, "admin", (tx) =>
+        start_next_finals_match(tx, { tournament_id: t.id }),
+      );
+      continue;
     }
     for (const m of running) {
       runToEnd(db, m);
@@ -226,6 +239,10 @@ test("the_top_cut_keeps_the_best_swiss_records", () => {
       expect(k.swiss_points >= c.swiss_points).toBe(true);
     }
   }
+  expect(tmatches(db, t, "Bracket"), "the bracket waits for the admin").toEqual(
+    [],
+  );
+  call(db, "admin", (tx) => start_next_finals_match(tx, { tournament_id: t }));
   const bracket = tmatches(db, t, "Bracket");
   expect(bracket.length).toBe(1);
   expect(seated(db, bracket[0]!.match_id).length).toBe(4);
@@ -274,7 +291,15 @@ test("an_oversized_table_scores_against_the_match_size", () => {
   )!.match_id;
   runToEnd(db, big);
 
-  expect(pointsByPlacing(db, t, big)).toEqual([3, 2, 1, 0]);
+  // First is worth 3, as at a table of three, and fourth earns nothing.
+  // Bots on the same score share the higher place.
+  const scores = seated(db, big)
+    .map((p) => p.score)
+    .sort((a, b) => byBigint(b, a));
+  const expected = scores.map((s) =>
+    Math.max(3 - scores.filter((other) => other > s).length, 0),
+  );
+  expect(pointsByPlacing(db, t, big)).toEqual(expected);
 });
 
 test("a_tournament_with_an_awkward_field_still_finishes", () => {

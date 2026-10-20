@@ -137,22 +137,34 @@ every tournament match. Sims are exempt, so they keep padding casual
 lobbies. Then three phases run on the Tournament row:
 
 - **Swiss**: `start_tournament` pairs the entrants randomly into matches of
-  about `match_size` for round 1. Subsequent rounds sort by `swiss_points`
-  and pair adjacently. Nobody sits out: there are `floor(n / match_size)`
+  about `match_size` for round 1. Later rounds sort by the standings and
+  pair adjacently. Nobody sits out: there are `floor(n / match_size)`
   tables and any leftover bots are spread one per table, so 7 bots at
   size 3 play at tables of 4 and 3. Points per finishing position are
   `match_size − place` (1st = `match_size`), floored at 0, so first is
-  worth the same at every table.
-- **Bracket**: after the configured number of Swiss rounds, top
-  `top_cut` advance. Each round eliminates the last-place finisher per
-  match. Continues until only 2 remain.
-- **Final**: best-of-3 between the last 2. Aggregate score across all 3
-  games determines the winner.
+  worth the same at every table. Bots on the same score share the higher
+  place, as tied leaders all get a win in `bot_stats`.
+- **The cut**: after the configured number of Swiss rounds the top
+  `top_cut` go through, ranked by Swiss points, then `total_score` (the
+  bot's score over all its matches in the tournament), then the lower bot
+  id. The tournament moves to `Bracket`, or straight to `Final` if only two
+  went through.
+- **Bracket**: each elimination match seats every bot still in and knocks
+  out its last-place finisher, a tie going to `total_score` and then the
+  higher bot id, so there are no replays. The knocked-out bot's
+  `final_finish_position` is the number left before the match. With two
+  left the tournament moves to `Final`.
+- **Final**: three games between the last two. Their score over the three
+  games, then `total_score`, then bot id, decides 1st and 2nd. The
+  tournament is then `Ended` with `winner_bot_id` set.
+
+Matches after the cut wait for the admin: `start_next_finals_match` starts
+the next elimination match or final game, and refuses while one is being
+played, so the finals can be run from a stage.
 
 `TournamentMatch` links `Tournament` ↔ `Match` rows with `round` and
-`phase`. The advancement logic lives in `onMatchEnded` and the
-`advanceTournament` / `startSwissRound` / `startEliminationRound` /
-`startFinalGame` helpers in `game.ts`.
+`phase`. The logic lives in `tournament.ts`: `onTournamentMatchEnded`
+scores each result, and stops moving a tournament once it has finished.
 
 ## Sealed-bid implementation
 
@@ -202,6 +214,7 @@ assume the caller already *is* the human.
 | `add_admin` / `remove_admin` | Admin | Caller checked via `requireAdmin` |
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
 | `create_tournament(...)` / `start_tournament(id)` / `cancel_tournament(id)` / `register_sim_bots(id)` | Admin | |
+| `start_next_finals_match(id)` | Admin | One finals match at a time |
 | `register_for_tournament(id)` / `unregister_from_tournament(id)` | Bot credential | Only while the tournament is in `Registration` |
 | `auction_tick` / `lobby_timeout_tick` | Scheduler only | `requireScheduler` rejects any client caller |
 

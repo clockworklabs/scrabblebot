@@ -10,6 +10,7 @@ import {
   humanLinkOf,
   latestTournament,
   tournamentEntries,
+  tournamentMatchRunning,
 } from "../data";
 import { fmtDateTime } from "../util";
 import { PageHeader, Panel, ShortIdentity, useAction } from "../ui";
@@ -169,10 +170,60 @@ function AdminList({
 
 function RunTournament({ conn }: { conn: DbConnection }) {
   const current = latestTournament(conn);
-  if (current && current.status.tag === "Registration") {
-    return <Registration conn={conn} tournament={current} />;
+  switch (current?.status.tag) {
+    case "Registration":
+      return <Registration conn={conn} tournament={current!} />;
+    case "Swiss":
+    case "Bracket":
+    case "Final":
+      return <Underway conn={conn} tournament={current!} />;
+    default:
+      return <CreateTournament conn={conn} />;
   }
-  return <CreateTournament conn={conn} />;
+}
+
+function Underway({
+  conn,
+  tournament,
+}: {
+  conn: DbConnection;
+  tournament: Tournament;
+}) {
+  const [error, run] = useAction();
+  const inFinals =
+    tournament.status.tag === "Bracket" || tournament.status.tag === "Final";
+  const playing = tournamentMatchRunning(conn, tournament.id);
+  const tournamentId = tournament.id;
+
+  return (
+    <Panel
+      full
+      title={`Tournament #${tournament.id}: ${tournament.status.tag}`}
+    >
+      <p>
+        {!inFinals
+          ? `Swiss round ${tournament.currentRound} of ${tournament.swissRoundsTotal} is being played. The finals start when you start them.`
+          : playing
+            ? "A finals match is being played."
+            : "Waiting for you to start the next finals match."}{" "}
+        <Link to="/tournament">Follow it</Link>.
+      </p>
+      {inFinals && (
+        <div className="actions">
+          <button
+            className="button"
+            disabled={playing}
+            onClick={() =>
+              run(conn.reducers.startNextFinalsMatch({ tournamentId }))
+            }
+          >
+            Start next finals match
+          </button>
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+    </Panel>
+  );
 }
 
 function CreateTournament({ conn }: { conn: DbConnection }) {

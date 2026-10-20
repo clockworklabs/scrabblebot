@@ -52,6 +52,7 @@ import RegisterForTournamentReducer from "./register_for_tournament_reducer";
 import RegisterSimBotsReducer from "./register_sim_bots_reducer";
 import RemoveAdminReducer from "./remove_admin_reducer";
 import SpawnSimulatedBotReducer from "./spawn_simulated_bot_reducer";
+import StartNextFinalsMatchReducer from "./start_next_finals_match_reducer";
 import StartTournamentReducer from "./start_tournament_reducer";
 import SubmitBidReducer from "./submit_bid_reducer";
 import SubmitWordReducer from "./submit_word_reducer";
@@ -637,6 +638,7 @@ const reducersSchema = __reducers(
   __reducerSchema("register_sim_bots", RegisterSimBotsReducer),
   __reducerSchema("remove_admin", RemoveAdminReducer),
   __reducerSchema("spawn_simulated_bot", SpawnSimulatedBotReducer),
+  __reducerSchema("start_next_finals_match", StartNextFinalsMatchReducer),
   __reducerSchema("start_tournament", StartTournamentReducer),
   __reducerSchema("submit_bid", SubmitBidReducer),
   __reducerSchema("submit_word", SubmitWordReducer),

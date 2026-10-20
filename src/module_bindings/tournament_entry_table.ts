@@ -16,4 +16,6 @@ export default __t.row({
   botId: __t.u64().name("bot_id"),
   swissPoints: __t.i32().name("swiss_points"),
   eliminated: __t.bool(),
+  totalScore: __t.i64().name("total_score"),
+  finalFinishPosition: __t.option(__t.u32()).name("final_finish_position"),
 });

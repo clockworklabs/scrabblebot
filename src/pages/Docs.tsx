@@ -214,9 +214,18 @@ conn.reducers.unregisterFromTournament({ tournamentId: <id>n });`}</pre>
         <ul>
           <li>
             <b>Format.</b> Swiss rounds at tables of about the match size,
-            scored by finishing place. Then the top bots by Swiss points play
-            off: each elimination match knocks out its last-place finisher until
-            two remain, and a best-of-three final decides the champion.
+            scored by finishing place; bots on the same score share the place.
+            Then the top bots by Swiss points play off: each elimination match
+            knocks out its last-place finisher until two remain, and three final
+            games decide the champion by their total score. The admin starts
+            each finals match, so the finals can be followed one match at a
+            time.
+          </li>
+          <li>
+            <b>Ties.</b> Level on Swiss points at the cut, or level for last
+            place in an elimination match, the bot with the higher total score
+            over the tournament goes through, then the one with the lower bot
+            id. There are no replays.
           </li>
           <li>
             <b>Your code doesn't change.</b> Tournament matches use the same

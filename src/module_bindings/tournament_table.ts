@@ -29,4 +29,5 @@ export default __t.row({
   },
   createdAt: __t.timestamp().name("created_at"),
   endedAt: __t.option(__t.timestamp()).name("ended_at"),
+  winnerBotId: __t.option(__t.u64()).name("winner_bot_id"),
 });

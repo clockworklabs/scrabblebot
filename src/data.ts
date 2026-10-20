@@ -124,3 +124,19 @@ export function botConnected(conn: DbConnection, botId: bigint): boolean {
   }
   return false;
 }
+
+// Whether one of the tournament's matches is being played.
+export function tournamentMatchRunning(
+  conn: DbConnection,
+  tournamentId: bigint,
+): boolean {
+  for (const tm of conn.db.tournamentMatch.iter()) {
+    if (
+      tm.tournamentId === tournamentId &&
+      conn.db.matchState.id.find(tm.matchId)?.status.tag === "Running"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}

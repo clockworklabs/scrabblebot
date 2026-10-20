@@ -524,6 +524,8 @@ export const tournament = table(
     auction_type: AuctionType,
     created_at: t.timestamp(),
     ended_at: t.option(t.timestamp()),
+    // Set when the final is decided.
+    winner_bot_id: t.option(t.u64()).default(undefined),
   }),
 );
 export type Tournament = Infer<typeof tournament.rowType>;
@@ -546,6 +548,12 @@ export const tournament_entry = table(
     bot_id: t.u64(),
     swiss_points: t.i32(),
     eliminated: t.bool(),
+    // The bot's score summed over its matches in this tournament, which
+    // breaks ties in the standings.
+    total_score: t.i64().default(0n),
+    // Where the bot finished, for finalists: set when it's knocked out of
+    // the finals, and 1 for the champion.
+    final_finish_position: t.option(t.u32()).default(undefined),
   }),
 );
 export type TournamentEntry = Infer<typeof tournament_entry.rowType>;

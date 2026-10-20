@@ -300,6 +300,7 @@ export const Tournament = __t.object("Tournament", {
   },
   createdAt: __t.timestamp(),
   endedAt: __t.option(__t.timestamp()),
+  winnerBotId: __t.option(__t.u64()),
 });
 export type Tournament = __Infer<typeof Tournament>;
 
@@ -309,6 +310,8 @@ export const TournamentEntry = __t.object("TournamentEntry", {
   botId: __t.u64(),
   swissPoints: __t.i32(),
   eliminated: __t.bool(),
+  totalScore: __t.i64(),
+  finalFinishPosition: __t.option(__t.u32()),
 });
 export type TournamentEntry = __Infer<typeof TournamentEntry>;
 
