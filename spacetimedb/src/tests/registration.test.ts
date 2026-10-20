@@ -6,6 +6,8 @@ import {
   cancel_tournament,
   create_tournament,
   join_lobby,
+  join_team,
+  leave_team,
   register_for_tournament,
   register_sim_bots,
   start_tournament,
@@ -19,6 +21,7 @@ import {
   failure,
   makeAdmin,
   newDb,
+  runToEnd,
   simIds,
   startMatch,
   teamWithBot,
@@ -213,4 +216,70 @@ test("bots_in_registration_can_still_play_casual_matches", () => {
   call(db, "Ann", (tx) => join_lobby(tx, {}));
   db.withReducerTx(asClaims("sim", "Cheapo-sim"), (tx) => join_lobby(tx, {}));
   expect(db.db.lobby_member.count()).toBe(2n);
+});
+
+// ---------- Leaving a team ----------
+
+const leave = (db: Test, who: string) =>
+  call(db, who, (tx) => leave_team(tx, {}));
+
+/** Ann's tournament, started, with her own match played out. */
+function underwayWithAnn(db: Test): [bigint, bigint] {
+  const ann = teamWithBot(db, "alice", "Ann");
+  const t = create(db);
+  register(db, "Ann", t);
+  registerSims(db, t);
+  start(db, t);
+  for (const m of [...db.db.match_participant.mp_by_bot.filter(ann)]) {
+    runToEnd(db, m.match_id);
+  }
+  return [t, ann];
+}
+
+test("a_team_with_a_bot_in_a_tournament_cannot_dissolve", () => {
+  const db = adminDb();
+  const [t, ann] = underwayWithAnn(db);
+  call(db, "bob", (tx) => join_team(tx, { team_name: "Team Ann" }));
+
+  leave(db, "bob"); // not the last member, so the team stays
+  expect(failure(() => leave(db, "alice"))).toBe(
+    "Your bot is still playing in a tournament; the last member can leave once it's knocked out or the tournament ends",
+  );
+  expect(db.db.bot.id.find(ann)).not.toBeNull();
+  expect(entrants(db, t)).toContain(ann);
+});
+
+test("a_team_can_dissolve_once_its_bot_is_knocked_out", () => {
+  const db = adminDb();
+  const [t, ann] = underwayWithAnn(db);
+  const e = [...db.db.tournament_entry.te_by_bot.filter(ann)][0]!;
+  db.db.tournament_entry.id.update({ ...e, eliminated: true });
+
+  leave(db, "alice");
+
+  expect(db.db.bot.id.find(ann)).toBeNull();
+  expect(entrants(db, t), "its entry stays on the record").toContain(ann);
+});
+
+test("dissolving_a_team_keeps_its_entries_in_finished_tournaments", () => {
+  const db = adminDb();
+  const [t, ann] = underwayWithAnn(db);
+  const tour = db.db.tournament.id.find(t)!;
+  db.db.tournament.id.update({ ...tour, status: { tag: "Ended" } });
+
+  leave(db, "alice");
+
+  expect(entrants(db, t)).toContain(ann);
+});
+
+test("dissolving_a_team_withdraws_its_bot_from_registration", () => {
+  const db = adminDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const t = create(db);
+  register(db, "Ann", t);
+
+  leave(db, "alice");
+
+  expect(entrants(db, t)).not.toContain(ann);
+  expect(db.db.tournament_entry.count()).toBe(0n);
 });

@@ -173,6 +173,11 @@ Matches after the cut wait for the admin: `start_next_finals_match` starts
 the next elimination match or final game, and refuses while one is being
 played, so the finals can be run from a stage.
 
+A tournament can't seat a deleted bot, so `leave_team` won't let the last
+member dissolve a team whose bot is still in contention in a tournament
+under way. Dissolving withdraws the bot from tournaments still in
+registration, and keeps its entries in ones it has played.
+
 `force_end_tournament` stops a tournament that's under way, leaving it
 `ForceEnded` with no champion. Its matches in progress play out as
 ordinary matches.

@@ -385,7 +385,22 @@ export const leave_team = spacetimedb.reducer((ctx) => {
     const bot_ids = [...ctx.db.bot.bot_by_team.filter(team_id)].map(
       (b) => b.id,
     );
+    // A tournament can't seat a deleted bot, so it would stall at the
+    // bot's next match.
+    if (bot_ids.some((bid) => heldForTournament(ctx, bid))) {
+      throw new SenderError(
+        "Your bot is still playing in a tournament; the last member can leave once it's knocked out or the tournament ends",
+      );
+    }
     for (const bid of bot_ids) {
+      // Withdraw it from tournaments that haven't started. Entries in
+      // tournaments it has played stay, as the record of what happened.
+      for (const e of [...ctx.db.tournament_entry.te_by_bot.filter(bid)]) {
+        const tour = ctx.db.tournament.id.find(e.tournament_id);
+        if (tour?.status.tag === "Registration") {
+          ctx.db.tournament_entry.id.delete(e.id);
+        }
+      }
       const cred_ids = [...ctx.db.bot_credential.cred_by_bot.filter(bid)].map(
         (c) => c.identity,
       );
