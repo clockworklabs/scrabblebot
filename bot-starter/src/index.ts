@@ -1,16 +1,17 @@
 // ScrabbleBot bot starter.
 //
-// First run (claim a credential):
-//   1. From the website, your team mints a nonce. Or from CLI:
-//      `spacetime call scrabblebot mint_credential_nonce`
-//      `spacetime sql 'SELECT code FROM my_nonces ORDER BY expires_at DESC'`
-//   2. Run the bot with the nonce:
-//      `BOT_NONCE=<code> npm start`
-//      The bot connects fresh, redeems the nonce, and persists its token
-//      to .token (so future runs don't need the nonce).
+// First run, with a token from the website:
+//   On your team's page, click "Generate token", then run
+//   `BOT_NAME=<name> BOT_TOKEN=<token> npm start`.
 //
-// Subsequent runs:
-//   `npm start`  -- uses the saved token.
+// Or with a nonce from the CLI:
+//   1. `spacetime call scrabblebot mint_credential_nonce`
+//      `spacetime sql 'SELECT code FROM my_nonces ORDER BY expires_at DESC'`
+//   2. `BOT_NAME=<name> BOT_NONCE=<code> npm start`
+//      The bot connects fresh and redeems the nonce.
+//
+// Either way the bot saves its token to .token-<BOT_NAME>, so later runs
+// need only `BOT_NAME=<name> npm start`.
 //
 // Entering a tournament: `TOURNAMENT_ID=<id> npm start` registers the bot
 // for that tournament when it connects. Only the bot itself can register,
@@ -31,7 +32,8 @@ import { chooseWord, decideBid } from "./strategy.js";
 const HOST = process.env.STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = process.env.STDB_DB ?? "scrabblebot";
 const BOT_NAME = process.env.BOT_NAME ?? "bot";
-const BOT_NONCE = process.env.BOT_NONCE; // only used on first run
+const BOT_TOKEN = process.env.BOT_TOKEN; // from the website, first run only
+const BOT_NONCE = process.env.BOT_NONCE; // from the CLI, first run only
 const TOURNAMENT_ID = process.env.TOURNAMENT_ID;
 const TOKEN_PATH = path.join(process.cwd(), `.token-${BOT_NAME}`);
 
@@ -200,7 +202,7 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
           return;
         } else {
           console.error(
-            `[${BOT_NAME}] no BotCredential for this token. Set BOT_NONCE and re-run.`,
+            `[${BOT_NAME}] no BotCredential for this token. Set BOT_TOKEN or BOT_NONCE and re-run.`,
           );
           process.exit(1);
         }
@@ -290,7 +292,7 @@ function main() {
   DbConnection.builder()
     .withUri(HOST)
     .withDatabaseName(DB_NAME)
-    .withToken(loadToken())
+    .withToken(BOT_TOKEN ?? loadToken())
     .onConnect(onConnect)
     .onConnectError((_ctx: ErrorContext, err: Error) =>
       console.error("connect error:", err.message),
