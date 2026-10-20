@@ -95,6 +95,17 @@ function participantForMatch(
   return null;
 }
 
+// A reducer call fails when the module refuses it, often for an expected
+// reason: a word played just after its match ended, a bid that missed the
+// auction's window. Log it and keep playing; an uncaught failure would stop
+// the bot.
+function logFailure(what: string) {
+  return (err: unknown) =>
+    console.warn(
+      `[${BOT_NAME}] ${what} failed: ${err instanceof Error ? err.message : err}`,
+    );
+}
+
 function tryBid(
   conn: DbConnection,
   auctionId: bigint,
@@ -112,7 +123,9 @@ function tryBid(
     myRack: rackForMatch(conn, matchId),
   });
   if (amount <= 0) return;
-  conn.reducers.submitBid({ auctionId, amount: BigInt(amount) });
+  conn.reducers
+    .submitBid({ auctionId, amount: BigInt(amount) })
+    .catch(logFailure(`bid on auction ${auctionId}`));
   bidsByAuction.add(key);
   console.log(
     `[${BOT_NAME}] bid ${amount} on '${letter}' (match ${matchId}, auction ${auctionId})`,
@@ -136,7 +149,9 @@ function tryPlayWord(conn: DbConnection) {
     });
     if (!word) continue;
     console.log(`[${BOT_NAME}] match ${matchId}: playing '${word}'`);
-    conn.reducers.submitWord({ matchId, word });
+    conn.reducers
+      .submitWord({ matchId, word })
+      .catch(logFailure(`playing '${word}'`));
   }
 }
 
@@ -155,7 +170,9 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
       if (myBotId === null) {
         if (BOT_NONCE) {
           console.log(`[${BOT_NAME}] claiming credential with nonce…`);
-          conn.reducers.claimCredential({ code: BOT_NONCE });
+          conn.reducers
+            .claimCredential({ code: BOT_NONCE })
+            .catch(logFailure("claiming the credential"));
           // Wait briefly for the credential to land; check again.
           setTimeout(() => {
             myBotId = resolveMyBotId(conn);
@@ -240,7 +257,7 @@ function joinLobby(conn: DbConnection) {
     );
   if (alreadyIn) return;
   console.log(`[${BOT_NAME}] joining lobby`);
-  conn.reducers.joinLobby({});
+  conn.reducers.joinLobby({}).catch(logFailure("joining the lobby"));
 }
 
 function bootstrapActivity(conn: DbConnection) {
