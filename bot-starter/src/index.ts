@@ -139,9 +139,13 @@ function tryBid(
 
 function tryPlayWord(conn: DbConnection) {
   if (myBotId === null) return;
+  // Only matches still being played. The bot keeps its letters from
+  // matches that have ended, but can't play them.
   const matches = new Set<bigint>();
   for (const p of conn.db.matchParticipant.iter()) {
-    if (p.botId === myBotId) matches.add(p.matchId);
+    if (p.botId !== myBotId) continue;
+    const m = conn.db.matchState.id.find(p.matchId);
+    if (m?.status.tag === "Running") matches.add(p.matchId);
   }
   const now = Date.now();
   for (const matchId of matches) {

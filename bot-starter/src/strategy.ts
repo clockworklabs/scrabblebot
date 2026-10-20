@@ -35,23 +35,29 @@ export interface WordContext {
  * Return the word (uppercase) to play, or null to skip.
  *
  * Default strategy: greedily find the longest playable word in the dictionary.
+ *
+ * Keep this fast. The bot runs it on every rack change, and while it runs
+ * the bot can't see the match move on: a search that takes longer than an
+ * auction means bids on closed auctions and words from spent letters.
  */
 export function chooseWord(ctx: WordContext): string | null {
-  // Tally rack.
-  const have: Record<string, number> = {};
-  for (const [letter, count] of ctx.myRack.entries()) have[letter] = count;
+  let tiles = 0;
+  for (const count of ctx.myRack.values()) tiles += count;
 
-  // Find the longest word we can spell.
-  let best: string | null = null;
+  // The dictionary is longest first, so the first word we can spell is
+  // the longest.
   for (const word of ctx.dictionary) {
-    if (best !== null && word.length <= best.length) continue;
-    const need: Record<string, number> = {};
-    for (const c of word) need[c] = (need[c] ?? 0) + 1;
-    let ok = true;
-    for (const [c, n] of Object.entries(need)) {
-      if ((have[c] ?? 0) < n) { ok = false; break; }
-    }
-    if (ok) best = word;
+    if (word.length <= tiles && canSpell(word, ctx.myRack)) return word;
   }
-  return best;
+  return null;
+}
+
+// Whether `rack` has every letter of `word`, counting repeats.
+function canSpell(word: string, rack: Map<string, number>): boolean {
+  const used: Record<string, number> = {};
+  for (const c of word) {
+    used[c] = (used[c] ?? 0) + 1;
+    if (used[c] > (rack.get(c) ?? 0)) return false;
+  }
+  return true;
 }
