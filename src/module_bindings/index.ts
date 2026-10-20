@@ -92,554 +92,322 @@ import WordPlayRow from "./word_play_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
-  admin: __table(
-    {
-      name: "admin",
-      indexes: [
-        {
-          accessor: "human_identity",
-          name: "admin_human_identity_idx_btree",
-          algorithm: "btree",
-          columns: ["humanIdentity"],
-        },
-      ],
-      constraints: [
-        {
-          name: "admin_human_identity_key",
-          constraint: "unique",
-          columns: ["humanIdentity"],
-        },
-      ],
-    },
-    AdminRow,
-  ),
-  auction: __table(
-    {
-      name: "auction",
-      indexes: [
-        {
-          accessor: "id",
-          name: "auction_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "auction_by_match",
-          name: "auction_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-        {
-          accessor: "auction_by_status",
-          name: "auction_status_idx_btree",
-          algorithm: "btree",
-          columns: ["status"],
-        },
-      ],
-      constraints: [
-        { name: "auction_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    AuctionRow,
-  ),
-  auctionResult: __table(
-    {
-      name: "auction_result",
-      indexes: [
-        {
-          accessor: "auction_id",
-          name: "auction_result_auction_id_idx_btree",
-          algorithm: "btree",
-          columns: ["auctionId"],
-        },
-        {
-          accessor: "result_by_match",
-          name: "auction_result_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "auction_result_auction_id_key",
-          constraint: "unique",
-          columns: ["auctionId"],
-        },
-      ],
-    },
-    AuctionResultRow,
-  ),
-  auctionTopBidArchive: __table(
-    {
-      name: "auction_top_bid_archive",
-      indexes: [
-        {
-          accessor: "auction_id",
-          name: "auction_top_bid_archive_auction_id_idx_btree",
-          algorithm: "btree",
-          columns: ["auctionId"],
-        },
-        {
-          accessor: "archive_by_match",
-          name: "auction_top_bid_archive_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "auction_top_bid_archive_auction_id_key",
-          constraint: "unique",
-          columns: ["auctionId"],
-        },
-      ],
-    },
-    AuctionTopBidArchiveRow,
-  ),
-  bot: __table(
-    {
-      name: "bot",
-      indexes: [
-        {
-          accessor: "id",
-          name: "bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "name",
-          name: "bot_name_idx_btree",
-          algorithm: "btree",
-          columns: ["name"],
-        },
-        {
-          accessor: "bot_by_team",
-          name: "bot_team_id_idx_btree",
-          algorithm: "btree",
-          columns: ["teamId"],
-        },
-      ],
-      constraints: [
-        { name: "bot_id_key", constraint: "unique", columns: ["id"] },
-        { name: "bot_name_key", constraint: "unique", columns: ["name"] },
-      ],
-    },
-    BotRow,
-  ),
-  botCredential: __table(
-    {
-      name: "bot_credential",
-      indexes: [
-        {
-          accessor: "cred_by_bot",
-          name: "bot_credential_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-        {
-          accessor: "identity",
-          name: "bot_credential_identity_idx_btree",
-          algorithm: "btree",
-          columns: ["identity"],
-        },
-      ],
-      constraints: [
-        {
-          name: "bot_credential_identity_key",
-          constraint: "unique",
-          columns: ["identity"],
-        },
-      ],
-    },
-    BotCredentialRow,
-  ),
-  botStats: __table(
-    {
-      name: "bot_stats",
-      indexes: [
-        {
-          accessor: "bot_id",
-          name: "bot_stats_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "bot_stats_bot_id_key",
-          constraint: "unique",
-          columns: ["botId"],
-        },
-      ],
-    },
-    BotStatsRow,
-  ),
-  humanLink: __table(
-    {
-      name: "human_link",
-      indexes: [
-        {
-          accessor: "link_by_human",
-          name: "human_link_human_identity_idx_btree",
-          algorithm: "btree",
-          columns: ["humanIdentity"],
-        },
-        {
-          accessor: "web_identity",
-          name: "human_link_web_identity_idx_btree",
-          algorithm: "btree",
-          columns: ["webIdentity"],
-        },
-      ],
-      constraints: [
-        {
-          name: "human_link_web_identity_key",
-          constraint: "unique",
-          columns: ["webIdentity"],
-        },
-      ],
-    },
-    HumanLinkRow,
-  ),
-  lobby: __table(
-    {
-      name: "lobby",
-      indexes: [
-        {
-          accessor: "id",
-          name: "lobby_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "lobby_by_status",
-          name: "lobby_status_idx_btree",
-          algorithm: "btree",
-          columns: ["status"],
-        },
-      ],
-      constraints: [
-        { name: "lobby_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    LobbyRow,
-  ),
-  lobbyMember: __table(
-    {
-      name: "lobby_member",
-      indexes: [
-        {
-          accessor: "lm_by_bot",
-          name: "lobby_member_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-        {
-          accessor: "id",
-          name: "lobby_member_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "lm_by_lobby",
-          name: "lobby_member_lobby_id_idx_btree",
-          algorithm: "btree",
-          columns: ["lobbyId"],
-        },
-      ],
-      constraints: [
-        { name: "lobby_member_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    LobbyMemberRow,
-  ),
-  matchParticipant: __table(
-    {
-      name: "match_participant",
-      indexes: [
-        {
-          accessor: "mp_by_bot",
-          name: "match_participant_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-        {
-          accessor: "id",
-          name: "match_participant_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "mp_by_match",
-          name: "match_participant_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "match_participant_id_key",
-          constraint: "unique",
-          columns: ["id"],
-        },
-      ],
-    },
-    MatchParticipantRow,
-  ),
-  matchState: __table(
-    {
-      name: "match_state",
-      indexes: [
-        {
-          accessor: "id",
-          name: "match_state_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "match_by_status",
-          name: "match_state_status_idx_btree",
-          algorithm: "btree",
-          columns: ["status"],
-        },
-      ],
-      constraints: [
-        { name: "match_state_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    MatchStateRow,
-  ),
-  matchmakerConfig: __table(
-    {
-      name: "matchmaker_config",
-      indexes: [
-        {
-          accessor: "id",
-          name: "matchmaker_config_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-      ],
-      constraints: [
-        {
-          name: "matchmaker_config_id_key",
-          constraint: "unique",
-          columns: ["id"],
-        },
-      ],
-    },
-    MatchmakerConfigRow,
-  ),
-  team: __table(
-    {
-      name: "team",
-      indexes: [
-        {
-          accessor: "id",
-          name: "team_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "name",
-          name: "team_name_idx_btree",
-          algorithm: "btree",
-          columns: ["name"],
-        },
-      ],
-      constraints: [
-        { name: "team_id_key", constraint: "unique", columns: ["id"] },
-        { name: "team_name_key", constraint: "unique", columns: ["name"] },
-      ],
-    },
-    TeamRow,
-  ),
-  teamMember: __table(
-    {
-      name: "team_member",
-      indexes: [
-        {
-          accessor: "id",
-          name: "team_member_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "tmember_by_team",
-          name: "team_member_team_id_idx_btree",
-          algorithm: "btree",
-          columns: ["teamId"],
-        },
-        {
-          accessor: "user",
-          name: "team_member_user_idx_btree",
-          algorithm: "btree",
-          columns: ["user"],
-        },
-      ],
-      constraints: [
-        { name: "team_member_id_key", constraint: "unique", columns: ["id"] },
-        {
-          name: "team_member_user_key",
-          constraint: "unique",
-          columns: ["user"],
-        },
-      ],
-    },
-    TeamMemberRow,
-  ),
-  tournament: __table(
-    {
-      name: "tournament",
-      indexes: [
-        {
-          accessor: "id",
-          name: "tournament_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-      ],
-      constraints: [
-        { name: "tournament_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    TournamentRow,
-  ),
-  tournamentEntry: __table(
-    {
-      name: "tournament_entry",
-      indexes: [
-        {
-          accessor: "te_by_bot",
-          name: "tournament_entry_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-        {
-          accessor: "id",
-          name: "tournament_entry_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "te_by_tournament",
-          name: "tournament_entry_tournament_id_idx_btree",
-          algorithm: "btree",
-          columns: ["tournamentId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "tournament_entry_id_key",
-          constraint: "unique",
-          columns: ["id"],
-        },
-      ],
-    },
-    TournamentEntryRow,
-  ),
-  tournamentMatch: __table(
-    {
-      name: "tournament_match",
-      indexes: [
-        {
-          accessor: "id",
-          name: "tournament_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "tm_by_match",
-          name: "tournament_match_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-        {
-          accessor: "tm_by_tournament",
-          name: "tournament_match_tournament_id_idx_btree",
-          algorithm: "btree",
-          columns: ["tournamentId"],
-        },
-      ],
-      constraints: [
-        {
-          name: "tournament_match_id_key",
-          constraint: "unique",
-          columns: ["id"],
-        },
-      ],
-    },
-    TournamentMatchRow,
-  ),
-  wordPlay: __table(
-    {
-      name: "word_play",
-      indexes: [
-        {
-          accessor: "play_by_bot",
-          name: "word_play_bot_id_idx_btree",
-          algorithm: "btree",
-          columns: ["botId"],
-        },
-        {
-          accessor: "id",
-          name: "word_play_id_idx_btree",
-          algorithm: "btree",
-          columns: ["id"],
-        },
-        {
-          accessor: "play_by_match",
-          name: "word_play_match_id_idx_btree",
-          algorithm: "btree",
-          columns: ["matchId"],
-        },
-      ],
-      constraints: [
-        { name: "word_play_id_key", constraint: "unique", columns: ["id"] },
-      ],
-    },
-    WordPlayRow,
-  ),
-  myAdmin: __table(
-    {
-      name: "my_admin",
-      indexes: [],
-      constraints: [],
-    },
-    MyAdminRow,
-  ),
-  myNonces: __table(
-    {
-      name: "my_nonces",
-      indexes: [],
-      constraints: [],
-    },
-    MyNoncesRow,
-  ),
-  myRack: __table(
-    {
-      name: "my_rack",
-      indexes: [],
-      constraints: [],
-    },
-    MyRackRow,
-  ),
-  myTeam: __table(
-    {
-      name: "my_team",
-      indexes: [],
-      constraints: [],
-    },
-    MyTeamRow,
-  ),
-  visibleAuctionTopBids: __table(
-    {
-      name: "visible_auction_top_bids",
-      indexes: [],
-      constraints: [],
-    },
-    VisibleAuctionTopBidsRow,
-  ),
+  admin: __table({
+    name: 'admin',
+    indexes: [
+      { accessor: 'humanIdentity', name: 'admin_human_identity_idx_btree', algorithm: 'btree', columns: [
+        'humanIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'admin_human_identity_key', constraint: 'unique', columns: ['humanIdentity'] },
+    ],
+  }, AdminRow),
+  auction: __table({
+    name: 'auction',
+    indexes: [
+      { accessor: 'id', name: 'auction_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'auctionByMatch', name: 'auction_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+      { accessor: 'auctionByStatus', name: 'auction_status_idx_btree', algorithm: 'btree', columns: [
+        'status',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, AuctionRow),
+  auctionResult: __table({
+    name: 'auction_result',
+    indexes: [
+      { accessor: 'auctionId', name: 'auction_result_auction_id_idx_btree', algorithm: 'btree', columns: [
+        'auctionId',
+      ] },
+      { accessor: 'resultByMatch', name: 'auction_result_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_result_auction_id_key', constraint: 'unique', columns: ['auctionId'] },
+    ],
+  }, AuctionResultRow),
+  auctionTopBidArchive: __table({
+    name: 'auction_top_bid_archive',
+    indexes: [
+      { accessor: 'auctionId', name: 'auction_top_bid_archive_auction_id_idx_btree', algorithm: 'btree', columns: [
+        'auctionId',
+      ] },
+      { accessor: 'archiveByMatch', name: 'auction_top_bid_archive_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'auction_top_bid_archive_auction_id_key', constraint: 'unique', columns: ['auctionId'] },
+    ],
+  }, AuctionTopBidArchiveRow),
+  bot: __table({
+    name: 'bot',
+    indexes: [
+      { accessor: 'id', name: 'bot_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'name', name: 'bot_name_idx_btree', algorithm: 'btree', columns: [
+        'name',
+      ] },
+      { accessor: 'botByTeam', name: 'bot_team_id_idx_btree', algorithm: 'btree', columns: [
+        'teamId',
+      ] },
+    ],
+    constraints: [
+      { name: 'bot_id_key', constraint: 'unique', columns: ['id'] },
+      { name: 'bot_name_key', constraint: 'unique', columns: ['name'] },
+    ],
+  }, BotRow),
+  botCredential: __table({
+    name: 'bot_credential',
+    indexes: [
+      { accessor: 'credByBot', name: 'bot_credential_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+      { accessor: 'identity', name: 'bot_credential_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'bot_credential_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, BotCredentialRow),
+  botStats: __table({
+    name: 'bot_stats',
+    indexes: [
+      { accessor: 'botId', name: 'bot_stats_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+    ],
+    constraints: [
+      { name: 'bot_stats_bot_id_key', constraint: 'unique', columns: ['botId'] },
+    ],
+  }, BotStatsRow),
+  humanLink: __table({
+    name: 'human_link',
+    indexes: [
+      { accessor: 'linkByHuman', name: 'human_link_human_identity_idx_btree', algorithm: 'btree', columns: [
+        'humanIdentity',
+      ] },
+      { accessor: 'webIdentity', name: 'human_link_web_identity_idx_btree', algorithm: 'btree', columns: [
+        'webIdentity',
+      ] },
+    ],
+    constraints: [
+      { name: 'human_link_web_identity_key', constraint: 'unique', columns: ['webIdentity'] },
+    ],
+  }, HumanLinkRow),
+  lobby: __table({
+    name: 'lobby',
+    indexes: [
+      { accessor: 'id', name: 'lobby_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'lobbyByStatus', name: 'lobby_status_idx_btree', algorithm: 'btree', columns: [
+        'status',
+      ] },
+    ],
+    constraints: [
+      { name: 'lobby_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, LobbyRow),
+  lobbyMember: __table({
+    name: 'lobby_member',
+    indexes: [
+      { accessor: 'lmByBot', name: 'lobby_member_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+      { accessor: 'id', name: 'lobby_member_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'lmByLobby', name: 'lobby_member_lobby_id_idx_btree', algorithm: 'btree', columns: [
+        'lobbyId',
+      ] },
+    ],
+    constraints: [
+      { name: 'lobby_member_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, LobbyMemberRow),
+  matchParticipant: __table({
+    name: 'match_participant',
+    indexes: [
+      { accessor: 'mpByBot', name: 'match_participant_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+      { accessor: 'id', name: 'match_participant_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'mpByMatch', name: 'match_participant_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'match_participant_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, MatchParticipantRow),
+  matchState: __table({
+    name: 'match_state',
+    indexes: [
+      { accessor: 'id', name: 'match_state_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'matchByStatus', name: 'match_state_status_idx_btree', algorithm: 'btree', columns: [
+        'status',
+      ] },
+    ],
+    constraints: [
+      { name: 'match_state_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, MatchStateRow),
+  matchmakerConfig: __table({
+    name: 'matchmaker_config',
+    indexes: [
+      { accessor: 'id', name: 'matchmaker_config_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'matchmaker_config_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, MatchmakerConfigRow),
+  team: __table({
+    name: 'team',
+    indexes: [
+      { accessor: 'id', name: 'team_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'name', name: 'team_name_idx_btree', algorithm: 'btree', columns: [
+        'name',
+      ] },
+    ],
+    constraints: [
+      { name: 'team_id_key', constraint: 'unique', columns: ['id'] },
+      { name: 'team_name_key', constraint: 'unique', columns: ['name'] },
+    ],
+  }, TeamRow),
+  teamMember: __table({
+    name: 'team_member',
+    indexes: [
+      { accessor: 'id', name: 'team_member_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'tmemberByTeam', name: 'team_member_team_id_idx_btree', algorithm: 'btree', columns: [
+        'teamId',
+      ] },
+      { accessor: 'user', name: 'team_member_user_idx_btree', algorithm: 'btree', columns: [
+        'user',
+      ] },
+    ],
+    constraints: [
+      { name: 'team_member_id_key', constraint: 'unique', columns: ['id'] },
+      { name: 'team_member_user_key', constraint: 'unique', columns: ['user'] },
+    ],
+  }, TeamMemberRow),
+  tournament: __table({
+    name: 'tournament',
+    indexes: [
+      { accessor: 'id', name: 'tournament_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'tournament_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TournamentRow),
+  tournamentEntry: __table({
+    name: 'tournament_entry',
+    indexes: [
+      { accessor: 'teByBot', name: 'tournament_entry_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+      { accessor: 'id', name: 'tournament_entry_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'teByTournament', name: 'tournament_entry_tournament_id_idx_btree', algorithm: 'btree', columns: [
+        'tournamentId',
+      ] },
+    ],
+    constraints: [
+      { name: 'tournament_entry_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TournamentEntryRow),
+  tournamentMatch: __table({
+    name: 'tournament_match',
+    indexes: [
+      { accessor: 'id', name: 'tournament_match_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'tmByMatch', name: 'tournament_match_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+      { accessor: 'tmByTournament', name: 'tournament_match_tournament_id_idx_btree', algorithm: 'btree', columns: [
+        'tournamentId',
+      ] },
+    ],
+    constraints: [
+      { name: 'tournament_match_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TournamentMatchRow),
+  wordPlay: __table({
+    name: 'word_play',
+    indexes: [
+      { accessor: 'playByBot', name: 'word_play_bot_id_idx_btree', algorithm: 'btree', columns: [
+        'botId',
+      ] },
+      { accessor: 'id', name: 'word_play_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'playByMatch', name: 'word_play_match_id_idx_btree', algorithm: 'btree', columns: [
+        'matchId',
+      ] },
+    ],
+    constraints: [
+      { name: 'word_play_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WordPlayRow),
+  myAdmin: __table({
+    name: 'my_admin',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyAdminRow),
+  myNonces: __table({
+    name: 'my_nonces',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyNoncesRow),
+  myRack: __table({
+    name: 'my_rack',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRackRow),
+  myTeam: __table({
+    name: 'my_team',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTeamRow),
+  visibleAuctionTopBids: __table({
+    name: 'visible_auction_top_bids',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleAuctionTopBidsRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -668,313 +436,58 @@ const reducersSchema = __reducers(
   __reducerSchema("start_tournament", StartTournamentReducer),
   __reducerSchema("submit_bid", SubmitBidReducer),
   __reducerSchema("submit_word", SubmitWordReducer),
-  __reducerSchema(
-    "unregister_from_tournament",
-    UnregisterFromTournamentReducer,
-  ),
+  __reducerSchema("unregister_from_tournament", UnregisterFromTournamentReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
-const proceduresSchema = __procedures();
-
-type __SchemaWithTableAccessorAliases = Omit<
-  typeof tablesSchema.schemaType,
-  "tables"
-> & {
-  tables: typeof tablesSchema.schemaType.tables & {
-    /** @deprecated Use `auctionResult` instead. This alias will be removed in the next major version. */
-    readonly auction_result: Omit<
-      (typeof tablesSchema.schemaType.tables)["auctionResult"],
-      "accessorName"
-    > & { readonly accessorName: "auction_result" };
-    /** @deprecated Use `auctionTopBidArchive` instead. This alias will be removed in the next major version. */
-    readonly auction_top_bid_archive: Omit<
-      (typeof tablesSchema.schemaType.tables)["auctionTopBidArchive"],
-      "accessorName"
-    > & { readonly accessorName: "auction_top_bid_archive" };
-    /** @deprecated Use `botCredential` instead. This alias will be removed in the next major version. */
-    readonly bot_credential: Omit<
-      (typeof tablesSchema.schemaType.tables)["botCredential"],
-      "accessorName"
-    > & { readonly accessorName: "bot_credential" };
-    /** @deprecated Use `botStats` instead. This alias will be removed in the next major version. */
-    readonly bot_stats: Omit<
-      (typeof tablesSchema.schemaType.tables)["botStats"],
-      "accessorName"
-    > & { readonly accessorName: "bot_stats" };
-    /** @deprecated Use `humanLink` instead. This alias will be removed in the next major version. */
-    readonly human_link: Omit<
-      (typeof tablesSchema.schemaType.tables)["humanLink"],
-      "accessorName"
-    > & { readonly accessorName: "human_link" };
-    /** @deprecated Use `lobbyMember` instead. This alias will be removed in the next major version. */
-    readonly lobby_member: Omit<
-      (typeof tablesSchema.schemaType.tables)["lobbyMember"],
-      "accessorName"
-    > & { readonly accessorName: "lobby_member" };
-    /** @deprecated Use `matchParticipant` instead. This alias will be removed in the next major version. */
-    readonly match_participant: Omit<
-      (typeof tablesSchema.schemaType.tables)["matchParticipant"],
-      "accessorName"
-    > & { readonly accessorName: "match_participant" };
-    /** @deprecated Use `matchState` instead. This alias will be removed in the next major version. */
-    readonly match_state: Omit<
-      (typeof tablesSchema.schemaType.tables)["matchState"],
-      "accessorName"
-    > & { readonly accessorName: "match_state" };
-    /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
-    readonly matchmaker_config: Omit<
-      (typeof tablesSchema.schemaType.tables)["matchmakerConfig"],
-      "accessorName"
-    > & { readonly accessorName: "matchmaker_config" };
-    /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
-    readonly team_member: Omit<
-      (typeof tablesSchema.schemaType.tables)["teamMember"],
-      "accessorName"
-    > & { readonly accessorName: "team_member" };
-    /** @deprecated Use `tournamentEntry` instead. This alias will be removed in the next major version. */
-    readonly tournament_entry: Omit<
-      (typeof tablesSchema.schemaType.tables)["tournamentEntry"],
-      "accessorName"
-    > & { readonly accessorName: "tournament_entry" };
-    /** @deprecated Use `tournamentMatch` instead. This alias will be removed in the next major version. */
-    readonly tournament_match: Omit<
-      (typeof tablesSchema.schemaType.tables)["tournamentMatch"],
-      "accessorName"
-    > & { readonly accessorName: "tournament_match" };
-    /** @deprecated Use `wordPlay` instead. This alias will be removed in the next major version. */
-    readonly word_play: Omit<
-      (typeof tablesSchema.schemaType.tables)["wordPlay"],
-      "accessorName"
-    > & { readonly accessorName: "word_play" };
-    /** @deprecated Use `myAdmin` instead. This alias will be removed in the next major version. */
-    readonly my_admin: Omit<
-      (typeof tablesSchema.schemaType.tables)["myAdmin"],
-      "accessorName"
-    > & { readonly accessorName: "my_admin" };
-    /** @deprecated Use `myNonces` instead. This alias will be removed in the next major version. */
-    readonly my_nonces: Omit<
-      (typeof tablesSchema.schemaType.tables)["myNonces"],
-      "accessorName"
-    > & { readonly accessorName: "my_nonces" };
-    /** @deprecated Use `myRack` instead. This alias will be removed in the next major version. */
-    readonly my_rack: Omit<
-      (typeof tablesSchema.schemaType.tables)["myRack"],
-      "accessorName"
-    > & { readonly accessorName: "my_rack" };
-    /** @deprecated Use `myTeam` instead. This alias will be removed in the next major version. */
-    readonly my_team: Omit<
-      (typeof tablesSchema.schemaType.tables)["myTeam"],
-      "accessorName"
-    > & { readonly accessorName: "my_team" };
-    /** @deprecated Use `visibleAuctionTopBids` instead. This alias will be removed in the next major version. */
-    readonly visible_auction_top_bids: Omit<
-      (typeof tablesSchema.schemaType.tables)["visibleAuctionTopBids"],
-      "accessorName"
-    > & { readonly accessorName: "visible_auction_top_bids" };
-  };
-};
+const proceduresSchema = __procedures(
+);
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
     cliVersion: "2.12.0" as const,
   },
-  tables: tablesSchema.schemaType
-    .tables as __SchemaWithTableAccessorAliases["tables"],
+  tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,
   ...proceduresSchema,
 } satisfies __RemoteModule<
-  __SchemaWithTableAccessorAliases,
+  typeof tablesSchema.schemaType,
   typeof reducersSchema.reducersType,
   typeof proceduresSchema
 >;
 
-const tableAccessorAliases = {
-  auction_result: "auctionResult",
-  auction_top_bid_archive: "auctionTopBidArchive",
-  bot_credential: "botCredential",
-  bot_stats: "botStats",
-  human_link: "humanLink",
-  lobby_member: "lobbyMember",
-  match_participant: "matchParticipant",
-  match_state: "matchState",
-  matchmaker_config: "matchmakerConfig",
-  team_member: "teamMember",
-  tournament_entry: "tournamentEntry",
-  tournament_match: "tournamentMatch",
-  word_play: "wordPlay",
-  my_admin: "myAdmin",
-  my_nonces: "myNonces",
-  my_rack: "myRack",
-  my_team: "myTeam",
-  visible_auction_top_bids: "visibleAuctionTopBids",
-} as const;
-
-function __withTableAccessorAliases<T extends object>(
-  target: T,
-  freeze = false,
-): T {
-  const out = Object.create(Object.getPrototypeOf(target)) as T &
-    Record<string, unknown>;
-  Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));
-  for (const [deprecatedAccessor, targetAccessor] of Object.entries(
-    tableAccessorAliases,
-  )) {
-    if (deprecatedAccessor in out) {
-      continue;
-    }
-    Object.defineProperty(out, deprecatedAccessor, {
-      enumerable: true,
-      configurable: false,
-      get: () => out[targetAccessor],
-    });
-  }
-  return freeze ? Object.freeze(out) : out;
-}
-
-type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
-export type DbView = __DbViewBase & {
-  /** @deprecated Use `auctionResult` instead. This alias will be removed in the next major version. */
-  readonly auction_result: __DbViewBase["auctionResult"];
-  /** @deprecated Use `auctionTopBidArchive` instead. This alias will be removed in the next major version. */
-  readonly auction_top_bid_archive: __DbViewBase["auctionTopBidArchive"];
-  /** @deprecated Use `botCredential` instead. This alias will be removed in the next major version. */
-  readonly bot_credential: __DbViewBase["botCredential"];
-  /** @deprecated Use `botStats` instead. This alias will be removed in the next major version. */
-  readonly bot_stats: __DbViewBase["botStats"];
-  /** @deprecated Use `humanLink` instead. This alias will be removed in the next major version. */
-  readonly human_link: __DbViewBase["humanLink"];
-  /** @deprecated Use `lobbyMember` instead. This alias will be removed in the next major version. */
-  readonly lobby_member: __DbViewBase["lobbyMember"];
-  /** @deprecated Use `matchParticipant` instead. This alias will be removed in the next major version. */
-  readonly match_participant: __DbViewBase["matchParticipant"];
-  /** @deprecated Use `matchState` instead. This alias will be removed in the next major version. */
-  readonly match_state: __DbViewBase["matchState"];
-  /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
-  readonly matchmaker_config: __DbViewBase["matchmakerConfig"];
-  /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
-  readonly team_member: __DbViewBase["teamMember"];
-  /** @deprecated Use `tournamentEntry` instead. This alias will be removed in the next major version. */
-  readonly tournament_entry: __DbViewBase["tournamentEntry"];
-  /** @deprecated Use `tournamentMatch` instead. This alias will be removed in the next major version. */
-  readonly tournament_match: __DbViewBase["tournamentMatch"];
-  /** @deprecated Use `wordPlay` instead. This alias will be removed in the next major version. */
-  readonly word_play: __DbViewBase["wordPlay"];
-  /** @deprecated Use `myAdmin` instead. This alias will be removed in the next major version. */
-  readonly my_admin: __DbViewBase["myAdmin"];
-  /** @deprecated Use `myNonces` instead. This alias will be removed in the next major version. */
-  readonly my_nonces: __DbViewBase["myNonces"];
-  /** @deprecated Use `myRack` instead. This alias will be removed in the next major version. */
-  readonly my_rack: __DbViewBase["myRack"];
-  /** @deprecated Use `myTeam` instead. This alias will be removed in the next major version. */
-  readonly my_team: __DbViewBase["myTeam"];
-  /** @deprecated Use `visibleAuctionTopBids` instead. This alias will be removed in the next major version. */
-  readonly visible_auction_top_bids: __DbViewBase["visibleAuctionTopBids"];
-};
-
-type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
-export type Tables = __TablesBase & {
-  /** @deprecated Use `auctionResult` instead. This alias will be removed in the next major version. */
-  readonly auction_result: __TablesBase["auctionResult"];
-  /** @deprecated Use `auctionTopBidArchive` instead. This alias will be removed in the next major version. */
-  readonly auction_top_bid_archive: __TablesBase["auctionTopBidArchive"];
-  /** @deprecated Use `botCredential` instead. This alias will be removed in the next major version. */
-  readonly bot_credential: __TablesBase["botCredential"];
-  /** @deprecated Use `botStats` instead. This alias will be removed in the next major version. */
-  readonly bot_stats: __TablesBase["botStats"];
-  /** @deprecated Use `humanLink` instead. This alias will be removed in the next major version. */
-  readonly human_link: __TablesBase["humanLink"];
-  /** @deprecated Use `lobbyMember` instead. This alias will be removed in the next major version. */
-  readonly lobby_member: __TablesBase["lobbyMember"];
-  /** @deprecated Use `matchParticipant` instead. This alias will be removed in the next major version. */
-  readonly match_participant: __TablesBase["matchParticipant"];
-  /** @deprecated Use `matchState` instead. This alias will be removed in the next major version. */
-  readonly match_state: __TablesBase["matchState"];
-  /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
-  readonly matchmaker_config: __TablesBase["matchmakerConfig"];
-  /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
-  readonly team_member: __TablesBase["teamMember"];
-  /** @deprecated Use `tournamentEntry` instead. This alias will be removed in the next major version. */
-  readonly tournament_entry: __TablesBase["tournamentEntry"];
-  /** @deprecated Use `tournamentMatch` instead. This alias will be removed in the next major version. */
-  readonly tournament_match: __TablesBase["tournamentMatch"];
-  /** @deprecated Use `wordPlay` instead. This alias will be removed in the next major version. */
-  readonly word_play: __TablesBase["wordPlay"];
-  /** @deprecated Use `myAdmin` instead. This alias will be removed in the next major version. */
-  readonly my_admin: __TablesBase["myAdmin"];
-  /** @deprecated Use `myNonces` instead. This alias will be removed in the next major version. */
-  readonly my_nonces: __TablesBase["myNonces"];
-  /** @deprecated Use `myRack` instead. This alias will be removed in the next major version. */
-  readonly my_rack: __TablesBase["myRack"];
-  /** @deprecated Use `myTeam` instead. This alias will be removed in the next major version. */
-  readonly my_team: __TablesBase["myTeam"];
-  /** @deprecated Use `visibleAuctionTopBids` instead. This alias will be removed in the next major version. */
-  readonly visible_auction_top_bids: __TablesBase["visibleAuctionTopBids"];
-};
-
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
-const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);
-export const tables: Tables = __withTableAccessorAliases(
-  tablesBase,
-  true,
-) as Tables;
+export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);
 
 /** The reducers available in this remote SpacetimeDB module. */
-export const reducers = __convertToAccessorMap(
-  reducersSchema.reducersType.reducers,
-);
+export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);
 
 /** The procedures available in this remote SpacetimeDB module. */
 export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
-export type EventContext = Omit<
-  __EventContextInterface<typeof REMOTE_MODULE>,
-  "db"
-> & { db: DbView };
+export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
 /** The context type returned in callbacks for reducer events. */
-export type ReducerEventContext = Omit<
-  __ReducerEventContextInterface<typeof REMOTE_MODULE>,
-  "db"
-> & { db: DbView };
+export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;
 /** The context type returned in callbacks for subscription events. */
-export type SubscriptionEventContext = Omit<
-  __SubscriptionEventContextInterface<typeof REMOTE_MODULE>,
-  "db"
-> & { db: DbView };
+export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;
 /** The context type returned in callbacks for error events. */
-export type ErrorContext = Omit<
-  __ErrorContextInterface<typeof REMOTE_MODULE>,
-  "db"
-> & { db: DbView };
+export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;
 /** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 
 /** Builder class to configure a new subscription to the remote SpacetimeDB instance. */
-export class SubscriptionBuilder extends __SubscriptionBuilderImpl<
-  typeof REMOTE_MODULE
-> {}
+export class SubscriptionBuilder extends __SubscriptionBuilderImpl<typeof REMOTE_MODULE> {}
 
 /** Builder class to configure a new database connection to the remote SpacetimeDB instance. */
 export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
-  declare db: DbView;
-
-  constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
-    super(config);
-    this.db = __withTableAccessorAliases(this.db) as DbView;
-  }
-
   /** Creates a new {@link DbConnectionBuilder} to configure and connect to the remote SpacetimeDB instance. */
   static builder = (): DbConnectionBuilder => {
-    return new DbConnectionBuilder(
-      REMOTE_MODULE,
-      (config: __DbConnectionConfig<typeof REMOTE_MODULE>) =>
-        new DbConnection(config),
-    );
+    return new DbConnectionBuilder(REMOTE_MODULE, (config: __DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));
   };
 
   /** Creates a new {@link SubscriptionBuilder} to configure a subscription to the remote SpacetimeDB instance. */
@@ -982,3 +495,4 @@ export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
     return new SubscriptionBuilder(this);
   };
 }
+

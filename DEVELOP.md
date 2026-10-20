@@ -351,12 +351,13 @@ CLI should all be on the same version, currently 2.12.0. A version mismatch mani
 using `name:` while the SDK expects `accessor:` for `IndexOpts` —
 typecheck fails immediately.
 
-Since 2.7, generated TypeScript handles are camelCase
-(`conn.db.matchState`, `conn.db.myRack`) even though the module's
-accessors and SQL table names stay snake_case (`match_state`). Use the
-camelCase handles in client code; the snake_case ones are deprecated
-aliases due to be removed in the next major version. Index accessors
-(`.web_identity`, `.identity`) are not renamed.
+TypeScript identifiers are camelCase everywhere: table accessors
+(`ctx.db.matchState`, `conn.db.myRack`), columns, index accessors
+(`.webIdentity`), reducers and views. The canonical names that SQL, the
+CLI and the HTTP API use are snake_case (`match_state`,
+`start_tournament`), derived by the SDK's default case conversion.
+Renaming an index accessor is not an automatic migration in 2.12, so a
+change that renames one has to be published with `--delete-data`.
 
 ## Deployment
 

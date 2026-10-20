@@ -86,7 +86,7 @@ export function humanLinkOf(
   identity: Identity | null,
 ) {
   return conn && identity
-    ? (conn.db.humanLink.web_identity.find(identity) ?? null)
+    ? (conn.db.humanLink.webIdentity.find(identity) ?? null)
     : null;
 }
 
