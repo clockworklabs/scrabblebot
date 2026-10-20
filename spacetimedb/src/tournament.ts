@@ -1,4 +1,5 @@
 import {
+  botInRunningMatch,
   findParticipant,
   isErr,
   shuffle,
@@ -7,7 +8,12 @@ import {
 } from "./game";
 import type { Ctx, Result } from "./game";
 import { SenderError } from "spacetimedb/server";
-import type { Tournament, TournamentEntry, TournamentPhase } from "./schema";
+import type {
+  Bot,
+  Tournament,
+  TournamentEntry,
+  TournamentPhase,
+} from "./schema";
 
 // A tournament still to finish: taking registrations or under way. Only one
 // may exist at a time.
@@ -44,6 +50,62 @@ export function heldForTournament(ctx: Ctx, bot_id: bigint): boolean {
     }
   }
   return false;
+}
+
+// Deletes the entries of bots deleted since they registered (their team
+// dissolved), which can't play, and returns the rest.
+export function dropEntriesWithoutBots(
+  ctx: Ctx,
+  tournament_id: bigint,
+): TournamentEntry[] {
+  const entries = [];
+  for (const e of [
+    ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
+  ]) {
+    if (ctx.db.bot.id.find(e.bot_id)) {
+      entries.push(e);
+    } else {
+      ctx.db.tournament_entry.id.delete(e.id);
+    }
+  }
+  return entries;
+}
+
+// Real entrants in a running match. Sim bots are driven by the module and
+// can play any number of matches at once.
+export function entrantsStillPlaying(ctx: Ctx, tournament_id: bigint): Bot[] {
+  const busy = [];
+  for (const e of ctx.db.tournament_entry.te_by_tournament.filter(
+    tournament_id,
+  )) {
+    const bot = ctx.db.bot.id.find(e.bot_id);
+    if (bot && !bot.is_simulated && botInRunningMatch(ctx, bot.id)) {
+      busy.push(bot);
+    }
+  }
+  return busy;
+}
+
+// After any match ends: start round 1 of a tournament that started while
+// some of its entrants were in casual matches, once none are.
+export function startRoundOneWhenFree(ctx: Ctx) {
+  for (const t of [...ctx.db.tournament.iter()]) {
+    if (t.status.tag !== "Swiss" || t.current_round !== 0) {
+      continue;
+    }
+    if (entrantsStillPlaying(ctx, t.id).length > 0) {
+      continue;
+    }
+    dropEntriesWithoutBots(ctx, t.id);
+    const started = startSwissRound(ctx, t.id, 1);
+    if (isErr(started)) {
+      console.error(
+        `Tournament ${t.id} couldn't start round 1: ${started.err}`,
+      );
+    } else {
+      console.info(`Tournament ${t.id}: round 1 started`);
+    }
+  }
 }
 
 export function requireRegistration(ctx: Ctx, tournament_id: bigint) {

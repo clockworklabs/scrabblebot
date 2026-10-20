@@ -282,7 +282,9 @@ function Underway({
     >
       <p>
         {!inFinals
-          ? `Swiss round ${tournament.currentRound} of ${tournament.swissRoundsTotal} is being played. The finals start when you start them.`
+          ? tournament.currentRound === 0
+            ? "Round 1 starts when the entrants still in casual matches finish them."
+            : `Swiss round ${tournament.currentRound} of ${tournament.swissRoundsTotal} is being played. The finals start when you start them.`
           : playing
             ? "A finals match is being played."
             : "Waiting for you to start the next finals match."}{" "}

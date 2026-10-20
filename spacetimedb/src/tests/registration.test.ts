@@ -160,18 +160,31 @@ test("starting_drops_entrants_whose_bot_is_gone", () => {
   expect(entrants(db, t)).toEqual(simIds(db));
 });
 
-test("starting_waits_for_entrants_in_running_matches", () => {
+// With bots cycling through the lobby, some entrant is nearly always in a
+// casual match, so the start can't wait for a moment when none are.
+test("round_one_waits_for_entrants_in_running_matches", () => {
   const db = adminDb();
   const ann = teamWithBot(db, "alice", "Ann");
   const t = create(db);
   register(db, "Ann", t);
   registerSims(db, t);
-  startMatch(db, VICKREY, [ann, simIds(db)[0]!]);
+  const casual = startMatch(db, VICKREY, [ann, simIds(db)[0]!]);
 
-  expect(failure(() => start(db, t))).toBe(
-    "Waiting for these entrants to finish their matches: Ann",
-  );
-  expect(db.db.tournament.id.find(t)!.status.tag).toBe("Registration");
+  start(db, t);
+
+  const tour = db.db.tournament.id.find(t)!;
+  expect([tour.status.tag, tour.current_round]).toEqual(["Swiss", 0]);
+  expect(db.db.tournament_match.count()).toBe(0n);
+
+  runToEnd(db, casual);
+
+  expect(db.db.tournament.id.find(t)!.current_round).toBe(1);
+  const seated = [...db.db.tournament_match.tm_by_tournament.filter(t)]
+    .flatMap((tm) => [
+      ...db.db.match_participant.mp_by_match.filter(tm.match_id),
+    ])
+    .map((p) => p.bot_id);
+  expect(seated).toContain(ann);
 });
 
 test("sim_entrants_in_running_matches_do_not_hold_up_the_start", () => {

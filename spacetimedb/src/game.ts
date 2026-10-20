@@ -28,7 +28,11 @@ import type {
   MatchParticipant,
   PendingBid,
 } from "./schema";
-import { heldForTournament, onTournamentMatchEnded } from "./tournament";
+import {
+  heldForTournament,
+  onTournamentMatchEnded,
+  startRoundOneWhenFree,
+} from "./tournament";
 
 export type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 export type ViewContext = ViewCtx<InferSchema<typeof spacetimedb>>;
@@ -468,6 +472,7 @@ export function onMatchEnded(ctx: Ctx, match_id: bigint) {
   updateEloAtMatchEnd(ctx, match_id);
 
   onTournamentMatchEnded(ctx, match_id);
+  startRoundOneWhenFree(ctx);
 }
 
 // ---------- ELO ----------

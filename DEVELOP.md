@@ -139,13 +139,15 @@ process: the caller has to be one of the bot's credentials, and a browser
 identity never is. `register_sim_bots` enters every sim for a rehearsal.
 `cancel_tournament` deletes a tournament that hasn't started.
 
-`start_tournament` drops entries whose bot has been deleted, needs at
-least `match_size` entrants, and refuses while a real (non-sim) entrant is
-in a running match. It takes entrants out of the open lobby, and until
-they're knocked out or the tournament ends, `join_lobby` refuses them and
-`resolve_lobby` skips them (`heldForTournament`), so they're free for
-every tournament match. Sims are exempt, so they keep padding casual
-lobbies. Then three phases run on the Tournament row:
+`start_tournament` drops entries whose bot has been deleted and needs at
+least `match_size` entrants. It takes entrants out of the open lobby, and
+until they're knocked out or the tournament ends, `join_lobby` refuses
+them and `resolve_lobby` skips them (`heldForTournament`), so they're free
+for every tournament match. Sims are exempt, so they keep padding casual
+lobbies. A real (non-sim) entrant still in a casual match finishes it
+first: the tournament sits at Swiss round 0, and round 1 starts when the
+last of those matches ends (`startRoundOneWhenFree`). Then three phases
+run on the Tournament row:
 
 - **Swiss**: `start_tournament` pairs the entrants randomly into matches of
   about `match_size` for round 1. Later rounds sort by the standings and

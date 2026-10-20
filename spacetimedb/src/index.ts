@@ -41,6 +41,8 @@ import spacetimedb, {
 import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
 import {
   addEntry,
+  dropEntriesWithoutBots,
+  entrantsStillPlaying,
   entryFor,
   heldForTournament,
   isActive,
@@ -897,42 +899,33 @@ export const start_tournament = spacetimedb.reducer(
     if (tour.status.tag !== "Registration") {
       throw new SenderError("Tournament has already started");
     }
-    // A bot deleted since it registered (its team dissolved) can't play.
-    const entries = [];
-    for (const e of [
-      ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
-    ]) {
-      if (ctx.db.bot.id.find(e.bot_id)) {
-        entries.push(e);
-      } else {
-        ctx.db.tournament_entry.id.delete(e.id);
-      }
-    }
+    const entries = dropEntriesWithoutBots(ctx, tournament_id);
     if (entries.length < tour.match_size) {
       throw new SenderError(
         `Need at least ${tour.match_size} registered bots to start`,
       );
     }
-    // A real bot can only play one match at a time. (Sim bots are driven
-    // by the module and can play any number at once.)
-    const busy = entries
-      .map((e) => ctx.db.bot.id.find(e.bot_id)!)
-      .filter((b) => !b.is_simulated && botInRunningMatch(ctx, b.id));
-    if (busy.length > 0) {
-      throw new SenderError(
-        `Waiting for these entrants to finish their matches: ${busy
-          .map((b) => b.name)
-          .join(", ")}`,
-      );
-    }
     ctx.db.tournament.id.update({ ...tour, status: { tag: "Swiss" } });
-    // Entrants waiting in the casual lobby leave it.
+    // Entrants waiting in the casual lobby leave it. From now on they can't
+    // join one.
     for (const lobby of ctx.db.lobby.lobby_by_status.filter({ tag: "Open" })) {
       for (const m of [...ctx.db.lobby_member.lm_by_lobby.filter(lobby.id)]) {
         if (entries.some((e) => e.bot_id === m.bot_id)) {
           ctx.db.lobby_member.id.delete(m.id);
         }
       }
+    }
+    // A real bot can only play one match at a time, so round 1 waits for
+    // entrants still in casual matches. With bots cycling through the
+    // lobby, there's rarely a moment when none are.
+    const busy = entrantsStillPlaying(ctx, tournament_id);
+    if (busy.length > 0) {
+      console.info(
+        `Tournament ${tournament_id} started with ${entries.length} entrants; round 1 waits for ${busy
+          .map((b) => b.name)
+          .join(", ")}`,
+      );
+      return;
     }
     orThrow(startSwissRound(ctx, tournament_id, 1));
     console.info(
