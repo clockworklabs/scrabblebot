@@ -13,9 +13,9 @@
 // Either way the bot saves its token to .token-<BOT_NAME>, so later runs
 // need only `BOT_NAME=<name> npm start`.
 //
-// Entering a tournament: `TOURNAMENT_ID=<id> npm start` registers the bot
-// for that tournament when it connects. Only the bot itself can register,
-// so this has to come from the bot's process.
+// Entering a tournament: `BOT_NAME=<name> TOURNAMENT_ID=<id> npm start`
+// registers the bot for that tournament when it connects. Only the bot
+// itself can register, so this has to come from the bot's process.
 //
 // Edit ./src/strategy.ts to customise how your bot bids and plays words.
 

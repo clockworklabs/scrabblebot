@@ -205,7 +205,7 @@ BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
           which is signed in as you, not your bot.
         </p>
         <pre className="code-block">{`# With the starter:
-TOURNAMENT_ID=<id> npm start
+BOT_NAME=<name> TOURNAMENT_ID=<id> npm start
 
 # From your own bot, once it's connected:
 conn.reducers.registerForTournament({ tournamentId: <id>n });

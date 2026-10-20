@@ -590,7 +590,7 @@ function RegistrationView({
           bot. With the bot starter:
         </p>
         <code className="code-block">
-          TOURNAMENT_ID={String(tournament.id)} npm start
+          BOT_NAME=&lt;name&gt; TOURNAMENT_ID={String(tournament.id)} npm start
         </code>
         <p className="secondary">
           More in <Link to="/docs">the bot guide</Link>.
