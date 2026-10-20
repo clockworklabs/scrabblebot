@@ -12,7 +12,7 @@ import {
   STARTING_BALANCE,
   STARTING_RACK_SIZE,
 } from "../game";
-import { auction_tick, submit_bid } from "../index";
+import { auctionTick, submitBid } from "../index";
 import type { AuctionResult, AuctionType } from "../schema";
 import {
   auctionJob,
@@ -47,18 +47,18 @@ function threeBots(db: Test): [bigint, bigint, bigint] {
   ];
 }
 
-function bid(db: Test, bot: string, auction_id: bigint, amount: bigint) {
-  call(db, bot, (tx) => submit_bid(tx, { auction_id, amount }));
+function bid(db: Test, bot: string, auctionId: bigint, amount: bigint) {
+  call(db, bot, (tx) => submitBid(tx, { auctionId, amount }));
 }
 
 function bidsOn(db: Test, auctionId: bigint): [bigint, bigint][] {
-  return [...db.db.pending_bid.bid_by_auction.filter(auctionId)]
-    .map((b): [bigint, bigint] => [b.bidder_bot_id, b.amount])
+  return [...db.db.pendingBid.bidByAuction.filter(auctionId)]
+    .map((b): [bigint, bigint] => [b.bidderBotId, b.amount])
     .sort(([a, an], [b, bn]) => byBigint(a, b) || byBigint(an, bn));
 }
 
 function resultOf(db: Test, auctionId: bigint): AuctionResult {
-  return db.db.auction_result.auction_id.find(auctionId)!;
+  return db.db.auctionResult.auctionId.find(auctionId)!;
 }
 
 function holds(
@@ -70,22 +70,22 @@ function holds(
   return rack(db, matchId, botId).find(([l]) => l === letter)?.[1] ?? 0;
 }
 
-test("starting_a_match_deals_racks_and_opens_the_first_auction", () => {
+test("starting a match deals racks and opens the first auction", () => {
   const db = newDb();
   const bots = threeBots(db);
   const m = startMatch(db, VICKREY, bots);
 
   const state = getMatch(db, m);
   expect(state.status.tag).toBe("Running");
-  expect(state.current_round).toBe(1);
-  expect(state.started_at).toEqual(now());
+  expect(state.currentRound).toBe(1);
+  expect(state.startedAt).toEqual(now());
   const dealt = bots.length * STARTING_RACK_SIZE;
-  expect(state.bag_total).toBe(98 - dealt - 1);
-  const inBag = [...db.db.bag_letter.bag_by_match.filter(m)].reduce(
+  expect(state.bagTotal).toBe(98 - dealt - 1);
+  const inBag = [...db.db.bagLetter.bagByMatch.filter(m)].reduce(
     (sum, b) => sum + b.remaining,
     0,
   );
-  expect(inBag, "bag rows agree with bag_total").toBe(state.bag_total);
+  expect(inBag, "bag rows agree with bagTotal").toBe(state.bagTotal);
 
   for (const bot of bots) {
     const p = participant(db, m, bot);
@@ -96,17 +96,17 @@ test("starting_a_match_deals_racks_and_opens_the_first_auction", () => {
 
   const auction = currentAuction(db, m);
   expect(auction.status.tag).toBe("Open");
-  expect(auction.closes_at).toEqual(afterMillis(now(), AUCTION_DURATION_MS));
-  const schedule = [...db.db.auction_schedule.iter()].filter(
-    (s) => s.match_id === m,
+  expect(auction.closesAt).toEqual(afterMillis(now(), AUCTION_DURATION_MS));
+  const schedule = [...db.db.auctionSchedule.iter()].filter(
+    (s) => s.matchId === m,
   );
   expect(schedule.length).toBe(1);
-  expect(schedule[0]!.scheduled_at).toEqual(
-    ScheduleAt.time(auction.closes_at.microsSinceUnixEpoch),
+  expect(schedule[0]!.scheduledAt).toEqual(
+    ScheduleAt.time(auction.closesAt.microsSinceUnixEpoch),
   );
 });
 
-test("starting_a_match_with_an_unknown_bot_writes_nothing", () => {
+test("starting a match with an unknown bot writes nothing", () => {
   const db = newDb();
   const sim = simIds(db)[0]!;
   // Ignore the error and commit, as a careless caller might: the roster is
@@ -115,12 +115,12 @@ test("starting_a_match_with_an_unknown_bot_writes_nothing", () => {
     startMatchWith(tx, VICKREY, [sim, 9999n]),
   );
   expect(result).toEqual({ err: "Unknown bot in roster: 9999" });
-  expect(db.db.match_state.count()).toBe(0n);
-  expect(db.db.match_participant.count()).toBe(0n);
-  expect(db.db.bag_letter.count()).toBe(0n);
+  expect(db.db.matchState.count()).toBe(0n);
+  expect(db.db.matchParticipant.count()).toBe(0n);
+  expect(db.db.bagLetter.count()).toBe(0n);
 });
 
-test("sims_bid_as_soon_as_an_auction_opens", () => {
+test("sims bid as soon as an auction opens", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, VICKREY, sims);
@@ -139,7 +139,7 @@ test("sims_bid_as_soon_as_an_auction_opens", () => {
   }
 });
 
-test("bids_are_validated", () => {
+test("bids are validated", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
@@ -162,7 +162,7 @@ test("bids_are_validated", () => {
   bid(db, "Ann", a, 0n);
 });
 
-test("bids_close_with_the_auction_window", () => {
+test("bids close with the auction window", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
@@ -175,7 +175,7 @@ test("bids_close_with_the_auction_window", () => {
   expect(failure(() => bid(db, "Ann", a, 1n))).toBe("Auction closed");
 });
 
-test("a_new_bid_replaces_the_old_one", () => {
+test("a new bid replaces the old one", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
@@ -193,7 +193,7 @@ test("a_new_bid_replaces_the_old_one", () => {
   expect(bidsOn(db, a)).toEqual(expected);
 });
 
-test("vickrey_winner_pays_the_second_highest_bid", () => {
+test("vickrey winner pays the second highest bid", () => {
   const db = newDb();
   const [ann, ben, cat] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben, cat]);
@@ -206,15 +206,15 @@ test("vickrey_winner_pays_the_second_highest_bid", () => {
   tick(db, m);
 
   const r = resultOf(db, auction.id);
-  expect([r.winner_bot_id, r.paid]).toEqual([ben, 6n]);
+  expect([r.winnerBotId, r.paid]).toEqual([ben, 6n]);
   expect(participant(db, m, ben).balance).toBe(STARTING_BALANCE - 6n);
   expect(participant(db, m, ann).balance).toBe(STARTING_BALANCE);
   expect(holds(db, m, ben, auction.letter)).toBe(had + 1);
-  const top = db.db.auction_top_bid.auction_id.find(auction.id)!;
-  expect(top.top_bid).toBe(9n);
+  const top = db.db.auctionTopBid.auctionId.find(auction.id)!;
+  expect(top.topBid).toBe(9n);
 });
 
-test("a_lone_vickrey_bidder_pays_the_reserve", () => {
+test("a lone vickrey bidder pays the reserve", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
@@ -229,7 +229,7 @@ test("a_lone_vickrey_bidder_pays_the_reserve", () => {
   );
 });
 
-test("first_price_winner_pays_their_own_bid", () => {
+test("first price winner pays their own bid", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, FIRST_PRICE, [ann, ben]);
@@ -240,11 +240,11 @@ test("first_price_winner_pays_their_own_bid", () => {
   tick(db, m);
 
   const r = resultOf(db, a);
-  expect([r.winner_bot_id, r.paid]).toEqual([ben, 8n]);
+  expect([r.winnerBotId, r.paid]).toEqual([ben, 8n]);
   expect(participant(db, m, ben).balance).toBe(STARTING_BALANCE - 8n);
 });
 
-test("ties_are_broken_at_random", () => {
+test("ties are broken at random", () => {
   for (const auctionType of [VICKREY, FIRST_PRICE] as AuctionType[]) {
     const db = newDb();
     const [ann, ben] = threeBots(db);
@@ -260,7 +260,7 @@ test("ties_are_broken_at_random", () => {
 
       const r = resultOf(db, a);
       expect(r.paid, auctionType.tag).toBe(1n);
-      winners.add(r.winner_bot_id!);
+      winners.add(r.winnerBotId!);
     }
     expect(
       [...winners].sort(byBigint),
@@ -269,7 +269,7 @@ test("ties_are_broken_at_random", () => {
   }
 });
 
-test("an_auction_with_no_positive_bids_goes_unsold", () => {
+test("an auction with no positive bids goes unsold", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
@@ -279,55 +279,55 @@ test("an_auction_with_no_positive_bids_goes_unsold", () => {
   tick(db, m);
 
   const r = resultOf(db, a);
-  expect([r.winner_bot_id, r.paid]).toEqual([undefined, 0n]);
+  expect([r.winnerBotId, r.paid]).toEqual([undefined, 0n]);
   expect(participant(db, m, ann).balance).toBe(STARTING_BALANCE);
 });
 
-test("closing_an_auction_opens_the_next_one", () => {
+test("closing an auction opens the next one", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
   const first = currentAuction(db, m);
-  const bagBefore = getMatch(db, m).bag_total;
+  const bagBefore = getMatch(db, m).bagTotal;
   bid(db, "Ann", first.id, 2n);
 
-  db.clock.set(first.closes_at);
+  db.clock.set(first.closesAt);
   tick(db, m);
 
   expect(db.db.auction.id.find(first.id)!.status.tag).toBe("Closed");
   expect(bidsOn(db, first.id), "pending bids are cleared").toEqual([]);
   const state = getMatch(db, m);
-  expect(state.current_round).toBe(2);
-  expect(state.bag_total).toBe(bagBefore - 1);
+  expect(state.currentRound).toBe(2);
+  expect(state.bagTotal).toBe(bagBefore - 1);
   const next = currentAuction(db, m);
   expect(next.id).not.toBe(first.id);
   expect(next.status.tag).toBe("Open");
-  expect(next.opens_at).toEqual(first.closes_at);
+  expect(next.opensAt).toEqual(first.closesAt);
   expect(
-    [...db.db.auction_schedule.iter()].some(
+    [...db.db.auctionSchedule.iter()].some(
       (s) =>
-        s.match_id === m &&
-        s.scheduled_at.tag === "Time" &&
-        s.scheduled_at.value.microsSinceUnixEpoch ===
-          next.closes_at.microsSinceUnixEpoch,
+        s.matchId === m &&
+        s.scheduledAt.tag === "Time" &&
+        s.scheduledAt.value.microsSinceUnixEpoch ===
+          next.closesAt.microsSinceUnixEpoch,
     ),
   ).toBe(true);
 });
 
-test("ticks_for_finished_or_unknown_matches_do_nothing", () => {
+test("ticks for finished or unknown matches do nothing", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
   runToEnd(db, m);
-  const results = db.db.auction_result.count();
+  const results = db.db.auctionResult.count();
 
   tick(db, m);
   tick(db, 9999n);
 
-  expect(db.db.auction_result.count()).toBe(results);
+  expect(db.db.auctionResult.count()).toBe(results);
 });
 
-test("a_sim_that_wins_a_letter_plays_its_best_word", () => {
+test("a sim that wins a letter plays its best word", () => {
   const db = newDb();
   const ann = teamWithBot(db, "alice", "Ann");
   const valor = botNamed(db, "Valor-sim").id;
@@ -335,24 +335,24 @@ test("a_sim_that_wins_a_letter_plays_its_best_word", () => {
   const auction = currentAuction(db, m);
   setRack(db, m, valor, "CA");
   db.db.auction.id.update({ ...auction, letter: "T" });
-  db.db.pending_bid.insert({
+  db.db.pendingBid.insert({
     id: 0n,
-    auction_id: auction.id,
-    bidder_bot_id: valor,
+    auctionId: auction.id,
+    bidderBotId: valor,
     amount: 1n,
-    submitted_at: now(),
+    submittedAt: now(),
   });
 
   tick(db, m);
 
-  const plays = [...db.db.word_play.play_by_bot.filter(valor)];
+  const plays = [...db.db.wordPlay.playByBot.filter(valor)];
   expect(plays.length).toBe(1);
   expect(["ACT", "CAT"]).toContain(plays[0]!.word);
   expect(rack(db, m, valor)).toEqual([]);
   expect(participant(db, m, valor).score).toBe(5n);
 });
 
-test("a_match_ends_when_the_bag_is_empty", () => {
+test("a match ends when the bag is empty", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, VICKREY, sims);
@@ -362,90 +362,90 @@ test("a_match_ends_when_the_bag_is_empty", () => {
   expect(ticks, "one auction per remaining tile").toBe(98 - dealt);
   const state = getMatch(db, m);
   expect(state.status.tag).toBe("Ended");
-  expect(state.ended_at).toEqual(db.clock.now());
-  expect(state.current_auction_id).toBeUndefined();
-  expect(state.bag_total).toBe(0);
+  expect(state.endedAt).toEqual(db.clock.now());
+  expect(state.currentAuctionId).toBeUndefined();
+  expect(state.bagTotal).toBe(0);
   expect(
-    [...db.db.auction.auction_by_match.filter(m)].every(
+    [...db.db.auction.auctionByMatch.filter(m)].every(
       (a) => a.status.tag === "Closed",
     ),
   ).toBe(true);
 });
 
-test("every_tile_is_accounted_for_at_the_end_of_a_match", () => {
+test("every tile is accounted for at the end of a match", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, VICKREY, sims);
   runToEnd(db, m);
 
-  const held = [...db.db.holding.holding_by_match.filter(m)].reduce(
+  const held = [...db.db.holding.holdingByMatch.filter(m)].reduce(
     (s, h) => s + h.count,
     0,
   );
-  const played = [...db.db.word_play.play_by_match.filter(m)].reduce(
+  const played = [...db.db.wordPlay.playByMatch.filter(m)].reduce(
     (s, w) => s + w.word.length,
     0,
   );
-  const unsold = [...db.db.auction_result.result_by_match.filter(m)].filter(
-    (r) => r.winner_bot_id === undefined,
+  const unsold = [...db.db.auctionResult.resultByMatch.filter(m)].filter(
+    (r) => r.winnerBotId === undefined,
   ).length;
   expect(held + played + unsold).toBe(98);
   expect(played, "sims should have played some words").toBeGreaterThan(0);
 });
 
-test("balances_equal_start_minus_spend_plus_score", () => {
+test("balances equal start minus spend plus score", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, FIRST_PRICE, sims);
   runToEnd(db, m);
 
   for (const bot of sims) {
-    const spent = [...db.db.auction_result.result_by_match.filter(m)]
-      .filter((r) => r.winner_bot_id === bot)
+    const spent = [...db.db.auctionResult.resultByMatch.filter(m)]
+      .filter((r) => r.winnerBotId === bot)
       .reduce((s, r) => s + r.paid, 0n);
     const p = participant(db, m, bot);
     expect(p.balance, `bot ${bot}`).toBe(STARTING_BALANCE - spent + p.score);
     expect(p.balance >= 0n).toBe(true);
-    const rewards = [...db.db.word_play.play_by_match.filter(m)]
-      .filter((w) => w.bot_id === bot)
-      .reduce((s, w) => s + w.total_reward, 0n);
+    const rewards = [...db.db.wordPlay.playByMatch.filter(m)]
+      .filter((w) => w.botId === bot)
+      .reduce((s, w) => s + w.totalReward, 0n);
     expect(p.score).toBe(rewards);
   }
 });
 
-test("ending_a_match_publishes_its_top_bids", () => {
+test("ending a match publishes its top bids", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, VICKREY, sims);
   runToEnd(db, m);
 
-  expect([...db.db.auction_top_bid.top_bid_by_match.filter(m)].length).toBe(0);
-  const archived = [...db.db.auction_top_bid_archive.archive_by_match.filter(m)]
+  expect([...db.db.auctionTopBid.topBidByMatch.filter(m)].length).toBe(0);
+  const archived = [...db.db.auctionTopBidArchive.archiveByMatch.filter(m)]
     .length;
   expect(archived).toBe(
-    [...db.db.auction_result.result_by_match.filter(m)].length,
+    [...db.db.auctionResult.resultByMatch.filter(m)].length,
   );
 });
 
-test("matches_are_deterministic_for_a_given_seed", () => {
+test("matches are deterministic for a given seed", () => {
   const play = () => {
     const db = newDb();
     const m = startMatch(db, VICKREY, simIds(db));
     runToEnd(db, m);
-    return [...db.db.word_play.iter()]
-      .map((w) => [w.id, w.bot_id, w.word] as const)
+    return [...db.db.wordPlay.iter()]
+      .map((w) => [w.id, w.botId, w.word] as const)
       .sort(([a], [b]) => byBigint(a, b));
   };
   expect(play()).toEqual(play());
 });
 
-test("clients_cannot_close_an_auction_early", () => {
+test("clients cannot close an auction early", () => {
   const db = newDb();
   const [ann, ben] = threeBots(db);
   const m = startMatch(db, VICKREY, [ann, ben]);
   const a = currentAuction(db, m).id;
   const err = failure(() =>
-    call(db, "Ann", (tx) => auction_tick(tx, { job: auctionJob(m) })),
+    call(db, "Ann", (tx) => auctionTick(tx, { job: auctionJob(m) })),
   );
   expect(err).toBe("Only the scheduler may call this");
   expect(db.db.auction.id.find(a)!.status.tag).toBe("Open");

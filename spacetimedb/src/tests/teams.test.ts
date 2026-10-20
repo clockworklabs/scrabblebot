@@ -4,13 +4,13 @@ import { ScheduleAt } from "spacetimedb";
 import { expect, test } from "vitest";
 import { afterSeconds, NONCE_TTL_SECONDS } from "../game";
 import {
-  claim_credential,
-  create_team,
-  join_team,
-  leave_team,
-  mint_credential_nonce,
-  nonce_expiry_tick,
-  promote_to_owner,
+  claimCredential,
+  createTeam,
+  joinTeam,
+  leaveTeam,
+  mintCredentialNonce,
+  nonceExpiryTick,
+  promoteToOwner,
 } from "../index";
 import type { NonceExpirySchedule, TeamMember } from "../schema";
 import {
@@ -29,37 +29,37 @@ import {
 } from "./harness";
 
 function create(db: Test, who: string, team: string, bot: string) {
-  call(db, who, (tx) => create_team(tx, { team_name: team, bot_name: bot }));
+  call(db, who, (tx) => createTeam(tx, { teamName: team, botName: bot }));
 }
 
 function member(db: Test, who: string): TeamMember | null {
-  return db.db.team_member.user.find(identity(who));
+  return db.db.teamMember.user.find(identity(who));
 }
 
 const mint = (db: Test, who: string) =>
-  call(db, who, (tx) => mint_credential_nonce(tx, {}));
+  call(db, who, (tx) => mintCredentialNonce(tx, {}));
 const claim = (db: Test, who: string, code: string) =>
-  call(db, who, (tx) => claim_credential(tx, { code }));
+  call(db, who, (tx) => claimCredential(tx, { code }));
 const join = (db: Test, who: string, team: string) =>
-  call(db, who, (tx) => join_team(tx, { team_name: team }));
+  call(db, who, (tx) => joinTeam(tx, { teamName: team }));
 const leave = (db: Test, who: string) =>
-  call(db, who, (tx) => leave_team(tx, {}));
+  call(db, who, (tx) => leaveTeam(tx, {}));
 
-test("create_team_makes_a_team_its_bot_and_an_owner", () => {
+test("create team makes a team its bot and an owner", () => {
   const db = newDb();
   create(db, "alice", "  The Alices  ", " Robo ");
 
   const team = db.db.team.name.find("The Alices")!;
   const bot = botNamed(db, "Robo");
-  expect(bot.team_id).toBe(team.id);
-  expect(bot.is_simulated).toBe(false);
+  expect(bot.teamId).toBe(team.id);
+  expect(bot.isSimulated).toBe(false);
   expect(bot.strategy.tag).toBe("Human");
   const m = member(db, "alice")!;
-  expect([m.team_id, m.role.tag]).toEqual([team.id, "Owner"]);
-  expect([...db.db.bot_credential.cred_by_bot.filter(bot.id)].length).toBe(0);
+  expect([m.teamId, m.role.tag]).toEqual([team.id, "Owner"]);
+  expect([...db.db.botCredential.credByBot.filter(bot.id)].length).toBe(0);
 });
 
-test("create_team_validates_names", () => {
+test("create team validates names", () => {
   const db = newDb();
   const cases: [string, string, string][] = [
     ["", "Robo", "Team name must be 1-48 characters"],
@@ -75,10 +75,10 @@ test("create_team_validates_names", () => {
     ).toBe(expected);
   }
   expect(db.db.team.count()).toBe(0n);
-  expect(db.db.team_member.count()).toBe(0n);
+  expect(db.db.teamMember.count()).toBe(0n);
 });
 
-test("create_team_rejects_duplicates_and_double_membership", () => {
+test("create team rejects duplicates and double membership", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   expect(failure(() => create(db, "bob", "Team", "Other"))).toBe(
@@ -91,14 +91,14 @@ test("create_team_rejects_duplicates_and_double_membership", () => {
   expect(db.db.bot.count()).toBe(7n);
 });
 
-test("join_team_adds_a_member", () => {
+test("join team adds a member", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   join(db, "bob", " Team ");
 
   const bob = member(db, "bob")!;
   expect(bob.role.tag).toBe("Member");
-  expect(bob.team_id).toBe(member(db, "alice")!.team_id);
+  expect(bob.teamId).toBe(member(db, "alice")!.teamId);
 
   expect(failure(() => join(db, "bob", "Team"))).toBe(
     "You're already on a team",
@@ -106,10 +106,10 @@ test("join_team_adds_a_member", () => {
   expect(failure(() => join(db, "carol", "Nope"))).toBe("No such team");
 });
 
-test("leaving_keeps_the_team_while_members_remain", () => {
+test("leaving keeps the team while members remain", () => {
   const db = newDb();
   const botId = teamWithBot(db, "alice", "Robo");
-  const teamId = member(db, "alice")!.team_id;
+  const teamId = member(db, "alice")!.teamId;
   join(db, "bob", "Team Robo");
 
   leave(db, "alice");
@@ -120,33 +120,33 @@ test("leaving_keeps_the_team_while_members_remain", () => {
   expect(failure(() => leave(db, "alice"))).toBe("You're not on a team");
 });
 
-test("the_last_member_leaving_dissolves_the_team_bot_and_credentials", () => {
+test("the last member leaving dissolves the team bot and credentials", () => {
   const db = newDb();
   const botId = teamWithBot(db, "alice", "Robo");
-  const teamId = member(db, "alice")!.team_id;
+  const teamId = member(db, "alice")!.teamId;
 
   leave(db, "alice");
 
   expect(db.db.team.id.find(teamId)).toBeNull();
   expect(db.db.bot.id.find(botId)).toBeNull();
-  expect([...db.db.bot_credential.cred_by_bot.filter(botId)].length).toBe(0);
+  expect([...db.db.botCredential.credByBot.filter(botId)].length).toBe(0);
   // The sims are untouched.
   expect(db.db.bot.count()).toBe(6n);
 });
 
-test("owners_can_promote_teammates", () => {
+test("owners can promote teammates", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   join(db, "bob", "Team");
 
   call(db, "alice", (tx) =>
-    promote_to_owner(tx, { target_user: identity("bob") }),
+    promoteToOwner(tx, { targetUser: identity("bob") }),
   );
   expect(member(db, "bob")!.role.tag).toBe("Owner");
   expect(member(db, "alice")!.role.tag).toBe("Owner");
 });
 
-test("promotion_rules", () => {
+test("promotion rules", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   join(db, "bob", "Team");
@@ -156,7 +156,7 @@ test("promotion_rules", () => {
   const promote = (who: string, target: string) =>
     failure(() =>
       call(db, who, (tx) =>
-        promote_to_owner(tx, { target_user: identity(target) }),
+        promoteToOwner(tx, { targetUser: identity(target) }),
       ),
     );
   expect(promote("bob", "carol")).toBe("Only owners can promote");
@@ -166,14 +166,14 @@ test("promotion_rules", () => {
   expect(member(db, "carol")!.role.tag).toBe("Member");
 });
 
-test("minting_a_nonce_requires_a_team", () => {
+test("minting a nonce requires a team", () => {
   const db = newDb();
   const err = failure(() => mint(db, "alice"));
   expect(err).toContain("not on a team");
-  expect(db.db.credential_nonce.count()).toBe(0n);
+  expect(db.db.credentialNonce.count()).toBe(0n);
 });
 
-test("minted_nonces_are_unique_codes_with_a_one_hour_ttl", () => {
+test("minted nonces are unique codes with a one hour ttl", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
@@ -186,14 +186,14 @@ test("minted_nonces_are_unique_codes_with_a_one_hour_ttl", () => {
     expect(n.code.length).toBe(12);
     expect(/^[A-Z0-9]+$/.test(n.code)).toBe(true);
     expect(/[IO01]/.test(n.code), `ambiguous chars in ${n.code}`).toBe(false);
-    expect(n.bot_id).toBe(botNamed(db, "Robo").id);
-    expect(n.expires_at).toEqual(afterSeconds(now(), NONCE_TTL_SECONDS));
+    expect(n.botId).toBe(botNamed(db, "Robo").id);
+    expect(n.expiresAt).toEqual(afterSeconds(now(), NONCE_TTL_SECONDS));
   }
 });
 
 // On the host, the SDK maps many timestamps to the same few ctx.random
 // seeds. Codes drawn from them collided, and the second mint failed.
-test("mints_that_share_an_rng_seed_get_different_codes", () => {
+test("mints that share an rng seed get different codes", () => {
   const db = newDb();
   create(db, "alice", "Alices", "Robo");
   create(db, "bob", "Bobs", "Bobo");
@@ -207,15 +207,15 @@ test("mints_that_share_an_rng_seed_get_different_codes", () => {
   );
 });
 
-test("any_team_member_can_mint_for_the_team_bot", () => {
+test("any team member can mint for the team bot", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   join(db, "bob", "Team");
   mint(db, "bob");
-  expect(noncesFor(db, "bob")[0]!.bot_id).toBe(botNamed(db, "Robo").id);
+  expect(noncesFor(db, "bob")[0]!.botId).toBe(botNamed(db, "Robo").id);
 });
 
-test("claiming_a_nonce_makes_the_caller_a_bot_credential", () => {
+test("claiming a nonce makes the caller a bot credential", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
@@ -223,15 +223,15 @@ test("claiming_a_nonce_makes_the_caller_a_bot_credential", () => {
 
   claim(db, "robo-process", code);
 
-  const cred = db.db.bot_credential.identity.find(identity("robo-process"))!;
-  expect(cred.bot_id).toBe(botNamed(db, "Robo").id);
+  const cred = db.db.botCredential.identity.find(identity("robo-process"))!;
+  expect(cred.botId).toBe(botNamed(db, "Robo").id);
   expect(cred.connected).toBe(true);
   expect(noncesFor(db, "alice"), "nonce is single-use").toEqual([]);
 
   expect(failure(() => claim(db, "another", code))).toBe("No such nonce");
 });
 
-test("an_identity_can_only_be_a_credential_for_one_bot", () => {
+test("an identity can only be a credential for one bot", () => {
   const db = newDb();
   teamWithBot(db, "alice", "Robo");
   create(db, "bob", "Other", "Other");
@@ -244,7 +244,7 @@ test("an_identity_can_only_be_a_credential_for_one_bot", () => {
   expect(noncesFor(db, "bob").length, "failed claim leaves the nonce").toBe(1);
 });
 
-test("expired_nonces_are_rejected", () => {
+test("expired nonces are rejected", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
@@ -255,15 +255,15 @@ test("expired_nonces_are_rejected", () => {
 
   expect(err).toBe("This nonce has expired");
   expect(
-    db.db.bot_credential.identity.find(identity("robo-process")),
+    db.db.botCredential.identity.find(identity("robo-process")),
   ).toBeNull();
 });
 
 function expiryJobs(db: Test): NonceExpirySchedule[] {
-  return [...db.db.nonce_expiry_schedule.iter()];
+  return [...db.db.nonceExpirySchedule.iter()];
 }
 
-test("minting_schedules_the_nonce_to_expire", () => {
+test("minting schedules the nonce to expire", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
@@ -271,30 +271,28 @@ test("minting_schedules_the_nonce_to_expire", () => {
   const nonce = noncesFor(db, "alice").pop()!;
   const jobs = expiryJobs(db);
   expect(jobs.length).toBe(1);
-  expect(jobs[0]!.nonce_id).toBe(nonce.id);
-  expect(jobs[0]!.scheduled_at).toEqual(
-    ScheduleAt.time(nonce.expires_at.microsSinceUnixEpoch),
+  expect(jobs[0]!.nonceId).toBe(nonce.id);
+  expect(jobs[0]!.scheduledAt).toEqual(
+    ScheduleAt.time(nonce.expiresAt.microsSinceUnixEpoch),
   );
 });
 
-test("expired_nonces_are_cleaned_up", () => {
+test("expired nonces are cleaned up", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
   mint(db, "alice");
-  const job = expiryJobs(db).sort((a, b) =>
-    byBigint(a.nonce_id, b.nonce_id),
-  )[0]!;
+  const job = expiryJobs(db).sort((a, b) => byBigint(a.nonceId, b.nonceId))[0]!;
 
   db.clock.set(afterSeconds(now(), NONCE_TTL_SECONDS));
-  internal(db, (tx) => nonce_expiry_tick(tx, { job }));
+  internal(db, (tx) => nonceExpiryTick(tx, { job }));
 
   const left = noncesFor(db, "alice");
   expect(left.length, "only the expired nonce goes").toBe(1);
-  expect(left[0]!.id).not.toBe(job.nonce_id);
+  expect(left[0]!.id).not.toBe(job.nonceId);
 });
 
-test("the_expiry_job_tolerates_an_already_claimed_nonce", () => {
+test("the expiry job tolerates an already claimed nonce", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
@@ -302,23 +300,23 @@ test("the_expiry_job_tolerates_an_already_claimed_nonce", () => {
   claim(db, "robo-process", code);
 
   const job = expiryJobs(db).pop()!;
-  internal(db, (tx) => nonce_expiry_tick(tx, { job }));
+  internal(db, (tx) => nonceExpiryTick(tx, { job }));
 });
 
-test("clients_cannot_expire_nonces", () => {
+test("clients cannot expire nonces", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   mint(db, "alice");
   const job = expiryJobs(db).pop()!;
 
   const err = failure(() =>
-    call(db, "mallory", (tx) => nonce_expiry_tick(tx, { job })),
+    call(db, "mallory", (tx) => nonceExpiryTick(tx, { job })),
   );
   expect(err).toBe("Only the scheduler may call this");
   expect(noncesFor(db, "alice").length).toBe(1);
 });
 
-test("dissolving_a_team_revokes_its_nonces", () => {
+test("dissolving a team revokes its nonces", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
   create(db, "bob", "Other", "Other");

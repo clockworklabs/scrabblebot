@@ -76,7 +76,7 @@ function TokenGenerator({
     for (const n of conn.db.myNonces.iter()) before.add(n.code);
     conn.reducers.mintCredentialNonce({});
 
-    // Wait briefly for the nonce row to land in my_nonces.
+    // Wait briefly for the nonce row to land in myNonces.
     let code: string | null = null;
     for (let i = 0; i < 30 && !code; i++) {
       await new Promise((r) => setTimeout(r, 100));

@@ -1,7 +1,9 @@
 import { schema, t, table, type Infer } from "spacetimedb/server";
 
-// Names (tables, columns, indexes, types) match the original Rust module
-// exactly, so the generated client bindings are unchanged.
+// The canonical names of tables, columns and indexes come from the SDK's
+// default snake_case conversion of the names here, so they're the names the
+// Rust module had: `botCredential` is the table `bot_credential`, and its
+// `botId` column is `bot_id`.
 
 // ---------- Enums ----------
 
@@ -53,14 +55,14 @@ export type LobbyStatus = Infer<typeof LobbyStatus>;
 
 // View return type — the caller's team summary. (The Rust module called
 // this type `MyTeam`, but the TypeScript library gives every view a
-// parameter type named after the view, and `my_team`'s is `MyTeam`.)
+// parameter type named after the view, and `myTeam`'s is `MyTeam`.)
 export const TeamSummary = t.row("TeamSummary", {
-  team_id: t.u64(),
-  team_name: t.string(),
-  bot_id: t.u64(),
-  bot_name: t.string(),
+  teamId: t.u64(),
+  teamName: t.string(),
+  botId: t.u64(),
+  botName: t.string(),
   role: TeamRole,
-  credential_count: t.u32(),
+  credentialCount: t.u32(),
 });
 export type TeamSummary = Infer<typeof TeamSummary>;
 
@@ -73,17 +75,17 @@ export const bot = table(
   {
     public: true,
     indexes: [
-      { accessor: "bot_by_team", algorithm: "btree", columns: ["team_id"] },
+      { accessor: "botByTeam", algorithm: "btree", columns: ["teamId"] },
     ],
   },
   t.row("Bot", {
     id: t.u64().primaryKey().autoInc(),
     name: t.string().unique(),
     // 0 for simulated bots and other system-owned personas (no team).
-    team_id: t.u64(),
-    is_simulated: t.bool(),
+    teamId: t.u64(),
+    isSimulated: t.bool(),
     strategy: BotStrategy,
-    created_at: t.timestamp(),
+    createdAt: t.timestamp(),
   }),
 );
 export type Bot = Infer<typeof bot.rowType>;
@@ -91,53 +93,53 @@ export type Bot = Infer<typeof bot.rowType>;
 // One row per credential authorized to act as a bot. Multiple credentials
 // per bot are allowed (the team adds new ones over time; old ones keep
 // working).
-export const bot_credential = table(
+export const botCredential = table(
   {
     public: true,
     indexes: [
-      { accessor: "cred_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "credByBot", algorithm: "btree", columns: ["botId"] },
     ],
   },
   t.row("BotCredential", {
     identity: t.identity().primaryKey(),
-    bot_id: t.u64(),
+    botId: t.u64(),
     connected: t.bool(),
-    last_seen: t.timestamp(),
+    lastSeen: t.timestamp(),
   }),
 );
-export type BotCredential = Infer<typeof bot_credential.rowType>;
+export type BotCredential = Infer<typeof botCredential.rowType>;
 
 // Links a website's anonymous identity to a developer's spacetimedb.com
-// identity. Written by the `connect_id` reducer (called from CLI authed as
+// identity. Written by the `connectId` reducer (called from CLI authed as
 // the spacetime.com user). One human can link many web identities; each web
 // identity links to exactly one human.
-export const human_link = table(
+export const humanLink = table(
   {
     public: true,
     indexes: [
       {
-        accessor: "link_by_human",
+        accessor: "linkByHuman",
         algorithm: "btree",
-        columns: ["human_identity"],
+        columns: ["humanIdentity"],
       },
     ],
   },
   t.row("HumanLink", {
-    web_identity: t.identity().primaryKey(),
-    human_identity: t.identity(),
-    linked_at: t.timestamp(),
+    webIdentity: t.identity().primaryKey(),
+    humanIdentity: t.identity(),
+    linkedAt: t.timestamp(),
   }),
 );
-export type HumanLink = Infer<typeof human_link.rowType>;
+export type HumanLink = Infer<typeof humanLink.rowType>;
 
 // Single-use credential claim code, minted by a team member. Private (not
-// subscribable) — the creator reads their own via the `my_nonces` view.
-// `code` is unique, so it gets its own index (`credential_nonce.code`).
-export const credential_nonce = table(
+// subscribable) — the creator reads their own via the `myNonces` view.
+// `code` is unique, so it gets its own index (`credentialNonce.code`).
+export const credentialNonce = table(
   {
     indexes: [
       {
-        accessor: "nonce_by_creator",
+        accessor: "nonceByCreator",
         algorithm: "btree",
         columns: ["creator"],
       },
@@ -146,54 +148,54 @@ export const credential_nonce = table(
   t.row("CredentialNonce", {
     id: t.u64().primaryKey().autoInc(),
     code: t.string().unique(),
-    bot_id: t.u64(),
+    botId: t.u64(),
     // The human (resolved spacetime.com identity) who minted this nonce.
     creator: t.identity(),
-    expires_at: t.timestamp(),
+    expiresAt: t.timestamp(),
   }),
 );
-export type CredentialNonce = Infer<typeof credential_nonce.rowType>;
+export type CredentialNonce = Infer<typeof credentialNonce.rowType>;
 
 // Deletes a nonce when it expires. A claimed nonce is deleted sooner, and
 // its job then finds nothing to do.
-export const nonce_expiry_schedule = table(
+export const nonceExpirySchedule = table(
   {},
   t.row("NonceExpirySchedule", {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-    nonce_id: t.u64(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    nonceId: t.u64(),
   }),
 );
-export type NonceExpirySchedule = Infer<typeof nonce_expiry_schedule.rowType>;
+export type NonceExpirySchedule = Infer<typeof nonceExpirySchedule.rowType>;
 
-// Team — group of humans, owns exactly one Bot (Bot.team_id points back).
+// Team — group of humans, owns exactly one Bot (Bot.teamId points back).
 export const team = table(
   { public: true },
   t.row("Team", {
     id: t.u64().primaryKey().autoInc(),
     name: t.string().unique(),
-    created_at: t.timestamp(),
+    createdAt: t.timestamp(),
   }),
 );
 export type Team = Infer<typeof team.rowType>;
 
-export const team_member = table(
+export const teamMember = table(
   {
     public: true,
     indexes: [
-      { accessor: "tmember_by_team", algorithm: "btree", columns: ["team_id"] },
+      { accessor: "tmemberByTeam", algorithm: "btree", columns: ["teamId"] },
     ],
   },
   t.row("TeamMember", {
     id: t.u64().primaryKey().autoInc(),
-    team_id: t.u64(),
+    teamId: t.u64(),
     // Spacetime.com identity (the human).
     user: t.identity().unique(),
     role: TeamRole,
-    joined_at: t.timestamp(),
+    joinedAt: t.timestamp(),
   }),
 );
-export type TeamMember = Infer<typeof team_member.rowType>;
+export type TeamMember = Infer<typeof teamMember.rowType>;
 
 // Humans who can run admin actions (start matches, configure matchmaker,
 // run tournaments, spawn simulated bots, manage other admins). Keyed by
@@ -201,146 +203,146 @@ export type TeamMember = Infer<typeof team_member.rowType>;
 export const admin = table(
   { public: true },
   t.row("Admin", {
-    human_identity: t.identity().primaryKey(),
-    added_at: t.timestamp(),
+    humanIdentity: t.identity().primaryKey(),
+    addedAt: t.timestamp(),
     // None for the bootstrapping first admin; otherwise the admin who added
     // this one.
-    added_by: t.option(t.identity()),
+    addedBy: t.option(t.identity()),
   }),
 );
 export type Admin = Infer<typeof admin.rowType>;
 
-// Lobby — one open lobby at a time accepts join_lobby calls. When it
+// Lobby — one open lobby at a time accepts joinLobby calls. When it
 // fills with real bots or its timer expires, the lobby resolves into a
 // Match and a fresh Open lobby takes its place.
 export const lobby = table(
   {
     public: true,
     indexes: [
-      { accessor: "lobby_by_status", algorithm: "btree", columns: ["status"] },
+      { accessor: "lobbyByStatus", algorithm: "btree", columns: ["status"] },
     ],
   },
   t.row("Lobby", {
     id: t.u64().primaryKey().autoInc(),
     status: LobbyStatus,
-    opens_at: t.timestamp(),
-    closes_at: t.timestamp(),
-    max_size: t.u32(),
-    auction_type: AuctionType,
-    resolved_match_id: t.option(t.u64()),
+    opensAt: t.timestamp(),
+    closesAt: t.timestamp(),
+    maxSize: t.u32(),
+    auctionType: AuctionType,
+    resolvedMatchId: t.option(t.u64()),
   }),
 );
 export type Lobby = Infer<typeof lobby.rowType>;
 
-export const lobby_member = table(
+export const lobbyMember = table(
   {
     public: true,
     indexes: [
-      { accessor: "lm_by_lobby", algorithm: "btree", columns: ["lobby_id"] },
-      { accessor: "lm_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "lmByLobby", algorithm: "btree", columns: ["lobbyId"] },
+      { accessor: "lmByBot", algorithm: "btree", columns: ["botId"] },
     ],
   },
   t.row("LobbyMember", {
     id: t.u64().primaryKey().autoInc(),
-    lobby_id: t.u64(),
-    bot_id: t.u64(),
-    joined_at: t.timestamp(),
+    lobbyId: t.u64(),
+    botId: t.u64(),
+    joinedAt: t.timestamp(),
   }),
 );
-export type LobbyMember = Infer<typeof lobby_member.rowType>;
+export type LobbyMember = Infer<typeof lobbyMember.rowType>;
 
-export const lobby_timeout_schedule = table(
+export const lobbyTimeoutSchedule = table(
   {},
   t.row("LobbyTimeoutSchedule", {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-    lobby_id: t.u64(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    lobbyId: t.u64(),
   }),
 );
-export type LobbyTimeoutSchedule = Infer<typeof lobby_timeout_schedule.rowType>;
+export type LobbyTimeoutSchedule = Infer<typeof lobbyTimeoutSchedule.rowType>;
 
-// Match — one row per match. id is auto_inc.
-export const match_state = table(
+// Match — one row per match. id is autoInc.
+export const matchState = table(
   {
     public: true,
     indexes: [
-      { accessor: "match_by_status", algorithm: "btree", columns: ["status"] },
+      { accessor: "matchByStatus", algorithm: "btree", columns: ["status"] },
     ],
   },
   t.row("Match", {
     id: t.u64().primaryKey().autoInc(),
     status: MatchStatus,
-    current_round: t.u32(),
-    current_auction_id: t.option(t.u64()),
-    bag_total: t.u32(),
-    auction_type: AuctionType,
-    created_at: t.timestamp(),
-    started_at: t.option(t.timestamp()),
-    ended_at: t.option(t.timestamp()),
+    currentRound: t.u32(),
+    currentAuctionId: t.option(t.u64()),
+    bagTotal: t.u32(),
+    auctionType: AuctionType,
+    createdAt: t.timestamp(),
+    startedAt: t.option(t.timestamp()),
+    endedAt: t.option(t.timestamp()),
     // The match defaults when it started, so changing them doesn't change
     // a match being played.
-    auction_duration_ms: t.u64().default(1000n),
-    starting_rack_size: t.u32().default(5),
+    auctionDurationMs: t.u64().default(1000n),
+    startingRackSize: t.u32().default(5),
   }),
 );
-export type Match = Infer<typeof match_state.rowType>;
+export type Match = Infer<typeof matchState.rowType>;
 
 // Per-match balance and score for one bot in one match.
-export const match_participant = table(
+export const matchParticipant = table(
   {
     public: true,
     indexes: [
-      { accessor: "mp_by_match", algorithm: "btree", columns: ["match_id"] },
-      { accessor: "mp_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "mpByMatch", algorithm: "btree", columns: ["matchId"] },
+      { accessor: "mpByBot", algorithm: "btree", columns: ["botId"] },
     ],
   },
   t.row("MatchParticipant", {
     id: t.u64().primaryKey().autoInc(),
-    match_id: t.u64(),
-    bot_id: t.u64(),
+    matchId: t.u64(),
+    botId: t.u64(),
     balance: t.i64(),
     score: t.i64(),
   }),
 );
-export type MatchParticipant = Infer<typeof match_participant.rowType>;
+export type MatchParticipant = Infer<typeof matchParticipant.rowType>;
 
 // Private — each match has its own bag.
-export const bag_letter = table(
+export const bagLetter = table(
   {
     indexes: [
-      { accessor: "bag_by_match", algorithm: "btree", columns: ["match_id"] },
+      { accessor: "bagByMatch", algorithm: "btree", columns: ["matchId"] },
     ],
   },
   t.row("BagLetter", {
     id: t.u64().primaryKey().autoInc(),
-    match_id: t.u64(),
+    matchId: t.u64(),
     letter: t.string(),
     remaining: t.u32(),
   }),
 );
-export type BagLetter = Infer<typeof bag_letter.rowType>;
+export type BagLetter = Infer<typeof bagLetter.rowType>;
 
-// Private — each bot sees only its own rack via `my_rack`.
+// Private — each bot sees only its own rack via `myRack`.
 export const holding = table(
   {
     indexes: [
-      { accessor: "holding_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "holdingByBot", algorithm: "btree", columns: ["botId"] },
       {
-        accessor: "holding_by_match",
+        accessor: "holdingByMatch",
         algorithm: "btree",
-        columns: ["match_id"],
+        columns: ["matchId"],
       },
       {
-        accessor: "holding_by_match_bot",
+        accessor: "holdingByMatchBot",
         algorithm: "btree",
-        columns: ["match_id", "bot_id"],
+        columns: ["matchId", "botId"],
       },
     ],
   },
   t.row("Holding", {
     id: t.u64().primaryKey().autoInc(),
-    match_id: t.u64(),
-    bot_id: t.u64(),
+    matchId: t.u64(),
+    botId: t.u64(),
     letter: t.string(),
     count: t.u32(),
   }),
@@ -352,12 +354,12 @@ export const auction = table(
     public: true,
     indexes: [
       {
-        accessor: "auction_by_match",
+        accessor: "auctionByMatch",
         algorithm: "btree",
-        columns: ["match_id"],
+        columns: ["matchId"],
       },
       {
-        accessor: "auction_by_status",
+        accessor: "auctionByStatus",
         algorithm: "btree",
         columns: ["status"],
       },
@@ -365,266 +367,264 @@ export const auction = table(
   },
   t.row("Auction", {
     id: t.u64().primaryKey().autoInc(),
-    match_id: t.u64(),
+    matchId: t.u64(),
     letter: t.string(),
-    opens_at: t.timestamp(),
-    closes_at: t.timestamp(),
+    opensAt: t.timestamp(),
+    closesAt: t.timestamp(),
     status: AuctionStatus,
   }),
 );
 export type Auction = Infer<typeof auction.rowType>;
 
 // Private — bots cannot subscribe and so cannot see competing bids.
-export const pending_bid = table(
+export const pendingBid = table(
   {
     indexes: [
       {
-        accessor: "bid_by_auction",
+        accessor: "bidByAuction",
         algorithm: "btree",
-        columns: ["auction_id"],
+        columns: ["auctionId"],
       },
     ],
   },
   t.row("PendingBid", {
     id: t.u64().primaryKey().autoInc(),
-    auction_id: t.u64(),
-    bidder_bot_id: t.u64(),
+    auctionId: t.u64(),
+    bidderBotId: t.u64(),
     amount: t.i64(),
-    submitted_at: t.timestamp(),
+    submittedAt: t.timestamp(),
   }),
 );
-export type PendingBid = Infer<typeof pending_bid.rowType>;
+export type PendingBid = Infer<typeof pendingBid.rowType>;
 
-export const auction_result = table(
+export const auctionResult = table(
   {
     public: true,
     indexes: [
       {
-        accessor: "result_by_match",
+        accessor: "resultByMatch",
         algorithm: "btree",
-        columns: ["match_id"],
+        columns: ["matchId"],
       },
     ],
   },
   t.row("AuctionResult", {
-    auction_id: t.u64().primaryKey(),
-    match_id: t.u64(),
+    auctionId: t.u64().primaryKey(),
+    matchId: t.u64(),
     letter: t.string(),
-    winner_bot_id: t.option(t.u64()),
+    winnerBotId: t.option(t.u64()),
     paid: t.i64(),
-    closed_at: t.timestamp(),
+    closedAt: t.timestamp(),
   }),
 );
-export type AuctionResult = Infer<typeof auction_result.rowType>;
+export type AuctionResult = Infer<typeof auctionResult.rowType>;
 
 // Private — live, in-progress matches. Top bid is sensitive while a match
 // is running (it leaks the winner's true valuation and would undermine
 // Vickrey's truth-telling if competing bots could see it). The
-// `visible_auction_top_bids` view exposes these to spectators only, bounded
+// `visibleAuctionTopBids` view exposes these to spectators only, bounded
 // to Running matches. On match end, rows here are moved to
-// `auction_top_bid_archive` (public) so spectators can replay finished
+// `auctionTopBidArchive` (public) so spectators can replay finished
 // matches without any view-body cost.
-export const auction_top_bid = table(
+export const auctionTopBid = table(
   {
     indexes: [
       {
-        accessor: "top_bid_by_match",
+        accessor: "topBidByMatch",
         algorithm: "btree",
-        columns: ["match_id"],
+        columns: ["matchId"],
       },
-      { accessor: "top_bid_visible", algorithm: "btree", columns: ["visible"] },
+      { accessor: "topBidVisible", algorithm: "btree", columns: ["visible"] },
     ],
   },
   t.row("AuctionTopBid", {
-    auction_id: t.u64().primaryKey(),
-    match_id: t.u64(),
-    top_bid: t.i64(),
+    auctionId: t.u64().primaryKey(),
+    matchId: t.u64(),
+    topBid: t.i64(),
     // Unused. Originally indexed for view enumeration; the view now uses
-    // `top_bid_by_match` driven by match status. Kept for schema compat.
+    // `topBidByMatch` driven by match status. Kept for schema compat.
     visible: t.bool(),
   }),
 );
-export type AuctionTopBid = Infer<typeof auction_top_bid.rowType>;
+export type AuctionTopBid = Infer<typeof auctionTopBid.rowType>;
 
-// Public — post-match archive of top_bid. Inserted by `on_match_ended` once
+// Public — post-match archive of topBid. Inserted by `onMatchEnded` once
 // the match is no longer live (bots can't act on the info, so it's safe to
 // expose). Spectators subscribe `WHERE match_id = ?` from the match page.
-export const auction_top_bid_archive = table(
+export const auctionTopBidArchive = table(
   {
     public: true,
     indexes: [
       {
-        accessor: "archive_by_match",
+        accessor: "archiveByMatch",
         algorithm: "btree",
-        columns: ["match_id"],
+        columns: ["matchId"],
       },
     ],
   },
   t.row("AuctionTopBidArchive", {
-    auction_id: t.u64().primaryKey(),
-    match_id: t.u64(),
-    top_bid: t.i64(),
+    auctionId: t.u64().primaryKey(),
+    matchId: t.u64(),
+    topBid: t.i64(),
   }),
 );
-export type AuctionTopBidArchive = Infer<
-  typeof auction_top_bid_archive.rowType
->;
+export type AuctionTopBidArchive = Infer<typeof auctionTopBidArchive.rowType>;
 
-export const word_play = table(
+export const wordPlay = table(
   {
     public: true,
     indexes: [
-      { accessor: "play_by_match", algorithm: "btree", columns: ["match_id"] },
-      { accessor: "play_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "playByMatch", algorithm: "btree", columns: ["matchId"] },
+      { accessor: "playByBot", algorithm: "btree", columns: ["botId"] },
     ],
   },
   t.row("WordPlay", {
     id: t.u64().primaryKey().autoInc(),
-    match_id: t.u64(),
-    bot_id: t.u64(),
+    matchId: t.u64(),
+    botId: t.u64(),
     word: t.string(),
-    base_score: t.i64(),
+    baseScore: t.i64(),
     bonus: t.i64(),
-    total_reward: t.i64(),
-    played_at: t.timestamp(),
+    totalReward: t.i64(),
+    playedAt: t.timestamp(),
   }),
 );
-export type WordPlay = Infer<typeof word_play.rowType>;
+export type WordPlay = Infer<typeof wordPlay.rowType>;
 
-export const auction_schedule = table(
+export const auctionSchedule = table(
   {},
   t.row("AuctionSchedule", {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-    match_id: t.u64(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    matchId: t.u64(),
   }),
 );
-export type AuctionSchedule = Infer<typeof auction_schedule.rowType>;
+export type AuctionSchedule = Infer<typeof auctionSchedule.rowType>;
 
 // Admin-set defaults for new matches and lobbies: one row, id 0. Until an
 // admin saves some, the defaults in game.ts apply.
-export const matchmaker_config = table(
+export const matchmakerConfig = table(
   { public: true },
   t.row("MatchmakerConfig", {
     id: t.u32().primaryKey(),
-    starting_rack_size: t.u32(),
-    lobby_max_size: t.u32(),
-    auction_duration_ms: t.u64(),
+    startingRackSize: t.u32(),
+    lobbyMaxSize: t.u32(),
+    auctionDurationMs: t.u64(),
   }),
 );
-export type MatchmakerConfig = Infer<typeof matchmaker_config.rowType>;
+export type MatchmakerConfig = Infer<typeof matchmakerConfig.rowType>;
 
 // Per-bot aggregate stats across all matches. ELO rating + counters.
-export const bot_stats = table(
+export const botStats = table(
   { public: true },
   t.row("BotStats", {
-    bot_id: t.u64().primaryKey(),
+    botId: t.u64().primaryKey(),
     rating: t.i32(),
-    matches_played: t.u32(),
+    matchesPlayed: t.u32(),
     wins: t.u32(),
-    total_score: t.i64(),
-    last_played: t.option(t.timestamp()),
-    openskill_mu: t.f64().default(25.0),
-    openskill_sigma: t.f64().default(8.333333333333334),
+    totalScore: t.i64(),
+    lastPlayed: t.option(t.timestamp()),
+    openskillMu: t.f64().default(25.0),
+    openskillSigma: t.f64().default(8.333333333333334),
   }),
 );
-export type BotStats = Infer<typeof bot_stats.rowType>;
+export type BotStats = Infer<typeof botStats.rowType>;
 
 export const tournament = table(
   { public: true },
   t.row("Tournament", {
     id: t.u64().primaryKey().autoInc(),
     status: TournamentStatus,
-    swiss_rounds_total: t.u32(),
-    current_round: t.u32(),
-    top_cut: t.u32(),
-    match_size: t.u32(),
-    auction_type: AuctionType,
-    created_at: t.timestamp(),
-    ended_at: t.option(t.timestamp()),
+    swissRoundsTotal: t.u32(),
+    currentRound: t.u32(),
+    topCut: t.u32(),
+    matchSize: t.u32(),
+    auctionType: AuctionType,
+    createdAt: t.timestamp(),
+    endedAt: t.option(t.timestamp()),
     // Set when the final is decided.
-    winner_bot_id: t.option(t.u64()).default(undefined),
+    winnerBotId: t.option(t.u64()).default(undefined),
   }),
 );
 export type Tournament = Infer<typeof tournament.rowType>;
 
-export const tournament_entry = table(
+export const tournamentEntry = table(
   {
     public: true,
     indexes: [
       {
-        accessor: "te_by_tournament",
+        accessor: "teByTournament",
         algorithm: "btree",
-        columns: ["tournament_id"],
+        columns: ["tournamentId"],
       },
-      { accessor: "te_by_bot", algorithm: "btree", columns: ["bot_id"] },
+      { accessor: "teByBot", algorithm: "btree", columns: ["botId"] },
     ],
   },
   t.row("TournamentEntry", {
     id: t.u64().primaryKey().autoInc(),
-    tournament_id: t.u64(),
-    bot_id: t.u64(),
-    swiss_points: t.i32(),
+    tournamentId: t.u64(),
+    botId: t.u64(),
+    swissPoints: t.i32(),
     eliminated: t.bool(),
     // The bot's score summed over its matches in this tournament, which
     // breaks ties in the standings.
-    total_score: t.i64().default(0n),
+    totalScore: t.i64().default(0n),
     // Where the bot finished, for finalists: set when it's knocked out of
     // the finals, and 1 for the champion.
-    final_finish_position: t.option(t.u32()).default(undefined),
+    finalFinishPosition: t.option(t.u32()).default(undefined),
   }),
 );
-export type TournamentEntry = Infer<typeof tournament_entry.rowType>;
+export type TournamentEntry = Infer<typeof tournamentEntry.rowType>;
 
-export const tournament_match = table(
+export const tournamentMatch = table(
   {
     public: true,
     indexes: [
       {
-        accessor: "tm_by_tournament",
+        accessor: "tmByTournament",
         algorithm: "btree",
-        columns: ["tournament_id"],
+        columns: ["tournamentId"],
       },
-      { accessor: "tm_by_match", algorithm: "btree", columns: ["match_id"] },
+      { accessor: "tmByMatch", algorithm: "btree", columns: ["matchId"] },
     ],
   },
   t.row("TournamentMatch", {
     id: t.u64().primaryKey().autoInc(),
-    tournament_id: t.u64(),
-    match_id: t.u64(),
+    tournamentId: t.u64(),
+    matchId: t.u64(),
     round: t.u32(),
     phase: TournamentPhase,
   }),
 );
-export type TournamentMatch = Infer<typeof tournament_match.rowType>;
+export type TournamentMatch = Infer<typeof tournamentMatch.rowType>;
 
 const spacetimedb = schema({
   bot,
-  bot_credential,
-  human_link,
-  credential_nonce,
-  nonce_expiry_schedule,
+  botCredential,
+  humanLink,
+  credentialNonce,
+  nonceExpirySchedule,
   team,
-  team_member,
+  teamMember,
   admin,
   lobby,
-  lobby_member,
-  lobby_timeout_schedule,
-  match_state,
-  match_participant,
-  bag_letter,
+  lobbyMember,
+  lobbyTimeoutSchedule,
+  matchState,
+  matchParticipant,
+  bagLetter,
   holding,
   auction,
-  pending_bid,
-  auction_result,
-  auction_top_bid,
-  auction_top_bid_archive,
-  word_play,
-  auction_schedule,
-  bot_stats,
+  pendingBid,
+  auctionResult,
+  auctionTopBid,
+  auctionTopBidArchive,
+  wordPlay,
+  auctionSchedule,
+  botStats,
   tournament,
-  tournament_entry,
-  tournament_match,
-  matchmaker_config,
+  tournamentEntry,
+  tournamentMatch,
+  matchmakerConfig,
 });
 export default spacetimedb;

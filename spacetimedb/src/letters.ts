@@ -70,7 +70,7 @@ export const DEFAULT_BAG: readonly (readonly [string, number])[] = [
 ];
 
 // Length-based reward multiplier as (numerator, denominator).
-// total_reward = base_score * num / denom (integer division).
+// totalReward = baseScore * num / denom (integer division).
 // Hoarding letters for longer words pays off superlinearly.
 export function lengthMultiplier(len: number): [bigint, bigint] {
   if (len <= 3) return [1n, 1n]; // 1.0x

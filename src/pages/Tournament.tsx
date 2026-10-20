@@ -219,7 +219,7 @@ function Rounds({
   botName: BotNames;
 }) {
   const standings = standingsByMatch(conn);
-  // Group tournament_match rows by (phase, round), in the order played.
+  // Group tournamentMatch rows by (phase, round), in the order played.
   const grouped = new Map<string, TournamentMatch[]>();
   for (const m of tmatches) {
     const key = `${m.phase.tag}:${m.round}`;

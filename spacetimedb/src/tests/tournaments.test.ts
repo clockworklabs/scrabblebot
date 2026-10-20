@@ -3,11 +3,11 @@
 import { expect, test } from "vitest";
 import { tableSizes } from "../tournament";
 import {
-  create_tournament,
-  register_sim_bots,
-  spawn_simulated_bot,
-  start_next_finals_match,
-  start_tournament,
+  createTournament,
+  registerSimBots,
+  spawnSimulatedBot,
+  startNextFinalsMatch,
+  startTournament,
 } from "../index";
 import type {
   MatchParticipant,
@@ -35,11 +35,11 @@ function create(
   size: number,
 ): bigint {
   call(db, "admin", (tx) =>
-    create_tournament(tx, {
-      swiss_rounds_total: rounds,
-      top_cut: topCut,
-      match_size: size,
-      auction_type: { tag: "Vickrey" },
+    createTournament(tx, {
+      swissRoundsTotal: rounds,
+      topCut: topCut,
+      matchSize: size,
+      auctionType: { tag: "Vickrey" },
     }),
   );
   return [...db.db.tournament.iter()]
@@ -50,8 +50,8 @@ function create(
 /** Create a tournament, enter every sim bot and start it. */
 function start(db: Test, rounds: number, topCut: number, size: number): bigint {
   const t = create(db, rounds, topCut, size);
-  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
-  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => registerSimBots(tx, { tournamentId: t }));
+  call(db, "admin", (tx) => startTournament(tx, { tournamentId: t }));
   return t;
 }
 
@@ -70,25 +70,25 @@ function tmatches(
   id: bigint,
   phase: TournamentPhase["tag"],
 ): TournamentMatch[] {
-  return [...db.db.tournament_match.tm_by_tournament.filter(id)]
+  return [...db.db.tournamentMatch.tmByTournament.filter(id)]
     .filter((m) => m.phase.tag === phase)
     .sort((a, b) => byBigint(a.id, b.id));
 }
 
 function entries(db: Test, id: bigint): TournamentEntry[] {
-  return [...db.db.tournament_entry.te_by_tournament.filter(id)].sort((a, b) =>
-    byBigint(a.bot_id, b.bot_id),
+  return [...db.db.tournamentEntry.teByTournament.filter(id)].sort((a, b) =>
+    byBigint(a.botId, b.botId),
   );
 }
 
 function runningMatches(db: Test): bigint[] {
-  return [...db.db.match_state.match_by_status.filter({ tag: "Running" })]
+  return [...db.db.matchState.matchByStatus.filter({ tag: "Running" })]
     .map((m) => m.id)
     .sort(byBigint);
 }
 
 function seated(db: Test, matchId: bigint): MatchParticipant[] {
-  return [...db.db.match_participant.mp_by_match.filter(matchId)];
+  return [...db.db.matchParticipant.mpByMatch.filter(matchId)];
 }
 
 /**
@@ -106,7 +106,7 @@ function playOut(db: Test) {
         return;
       }
       call(db, "admin", (tx) =>
-        start_next_finals_match(tx, { tournament_id: t.id }),
+        startNextFinalsMatch(tx, { tournamentId: t.id }),
       );
       continue;
     }
@@ -119,7 +119,7 @@ function playOut(db: Test) {
 
 function spawnExtraSim(db: Test) {
   call(db, "admin", (tx) =>
-    spawn_simulated_bot(tx, {
+    spawnSimulatedBot(tx, {
       name: "Extra-sim",
       strategy: { tag: "Cheapskate" },
     }),
@@ -130,11 +130,11 @@ function spawnExtraSim(db: Test) {
 function pointsByPlacing(db: Test, t: bigint, matchId: bigint): number[] {
   const placed = seated(db, matchId).sort((a, b) => byBigint(b.score, a.score));
   return placed.map(
-    (p) => entries(db, t).find((e) => e.bot_id === p.bot_id)!.swiss_points,
+    (p) => entries(db, t).find((e) => e.botId === p.botId)!.swissPoints,
   );
 }
 
-test("create_tournament_validates_its_settings", () => {
+test("create tournament validates its settings", () => {
   const db = adminDb();
   expect(failure(() => create(db, 1, 2, 1))).toBe(
     "Tournament match_size must be >= 2",
@@ -146,7 +146,7 @@ test("create_tournament_validates_its_settings", () => {
   expect(db.db.tournament.count()).toBe(0n);
 });
 
-test("starting_needs_enough_entrants", () => {
+test("starting needs enough entrants", () => {
   const db = adminDb();
   expect(failure(() => start(db, 1, 2, 7))).toBe(
     "Need at least 7 registered bots to start",
@@ -155,53 +155,53 @@ test("starting_needs_enough_entrants", () => {
   expect(t.status.tag, "still taking registrations").toBe("Registration");
 });
 
-test("starting_enters_every_bot_and_pairs_round_one", () => {
+test("starting enters every bot and pairs round one", () => {
   const db = adminDb();
   const t = start(db, 2, 4, 3);
 
   const tour = tournament(db, t);
-  expect([tour.status.tag, tour.current_round]).toEqual(["Swiss", 1]);
+  expect([tour.status.tag, tour.currentRound]).toEqual(["Swiss", 1]);
   const es = entries(db, t);
-  expect(es.map((e) => e.bot_id)).toEqual(simIds(db));
-  expect(es.every((e) => e.swiss_points === 0 && !e.eliminated)).toBe(true);
+  expect(es.map((e) => e.botId)).toEqual(simIds(db));
+  expect(es.every((e) => e.swissPoints === 0 && !e.eliminated)).toBe(true);
 
   const round1 = tmatches(db, t, "Swiss");
   expect(round1.length).toBe(2);
   const all = round1
-    .flatMap((tm) => seated(db, tm.match_id).map((p) => p.bot_id))
+    .flatMap((tm) => seated(db, tm.matchId).map((p) => p.botId))
     .sort(byBigint);
   expect(all, "each bot plays exactly once").toEqual(simIds(db));
 });
 
-test("swiss_matches_award_points_by_placing", () => {
+test("swiss matches award points by placing", () => {
   const db = adminDb();
   const t = start(db, 2, 4, 3);
-  const first = tmatches(db, t, "Swiss")[0]!.match_id;
+  const first = tmatches(db, t, "Swiss")[0]!.matchId;
   runToEnd(db, first);
 
   expect(pointsByPlacing(db, t, first)).toEqual([3, 2, 1]);
-  expect(tournament(db, t).current_round, "round 1 isn't over yet").toBe(1);
+  expect(tournament(db, t).currentRound, "round 1 isn't over yet").toBe(1);
 });
 
-test("the_next_swiss_round_starts_when_the_last_match_ends", () => {
+test("the next swiss round starts when the last match ends", () => {
   const db = adminDb();
   const t = start(db, 2, 4, 3);
   for (const tm of tmatches(db, t, "Swiss")) {
-    runToEnd(db, tm.match_id);
+    runToEnd(db, tm.matchId);
   }
-  expect(tournament(db, t).current_round).toBe(2);
+  expect(tournament(db, t).currentRound).toBe(2);
   const round2 = tmatches(db, t, "Swiss").filter((m) => m.round === 2);
   expect(round2.length).toBe(2);
 });
 
-test("a_full_tournament_runs_from_swiss_to_a_single_champion", () => {
+test("a full tournament runs from swiss to a single champion", () => {
   const db = adminDb();
   const t = start(db, 2, 4, 3);
   playOut(db);
 
   const tour = tournament(db, t);
   expect(tour.status.tag).toBe("Ended");
-  expect(tour.ended_at).toBeDefined();
+  expect(tour.endedAt).toBeDefined();
 
   expect(tmatches(db, t, "Swiss").length).toBe(4);
   // Bracket: 4 → 3 → 2, one elimination per match.
@@ -212,21 +212,21 @@ test("a_full_tournament_runs_from_swiss_to_a_single_champion", () => {
   const alive = entries(db, t).filter((e) => !e.eliminated);
   expect(alive.length, "one champion").toBe(1);
   // The champion had the best aggregate across the three finals.
-  const champion = alive[0]!.bot_id;
-  const finalists = seated(db, finals[0]!.match_id).map((p) => p.bot_id);
+  const champion = alive[0]!.botId;
+  const finalists = seated(db, finals[0]!.matchId).map((p) => p.botId);
   expect(finalists.length).toBe(2);
   const total = (bot: bigint) =>
-    finals.reduce((sum, f) => sum + participant(db, f.match_id, bot).score, 0n);
+    finals.reduce((sum, f) => sum + participant(db, f.matchId, bot).score, 0n);
   for (const bot of finalists) {
     expect(total(champion) >= total(bot)).toBe(true);
   }
 });
 
-test("the_top_cut_keeps_the_best_swiss_records", () => {
+test("the top cut keeps the best swiss records", () => {
   const db = adminDb();
   const t = start(db, 1, 4, 3);
   for (const tm of tmatches(db, t, "Swiss")) {
-    runToEnd(db, tm.match_id);
+    runToEnd(db, tm.matchId);
   }
 
   expect(tournament(db, t).status.tag).toBe("Bracket");
@@ -236,19 +236,19 @@ test("the_top_cut_keeps_the_best_swiss_records", () => {
   expect(kept.length).toBe(4);
   for (const k of kept) {
     for (const c of cut) {
-      expect(k.swiss_points >= c.swiss_points).toBe(true);
+      expect(k.swissPoints >= c.swissPoints).toBe(true);
     }
   }
   expect(tmatches(db, t, "Bracket"), "the bracket waits for the admin").toEqual(
     [],
   );
-  call(db, "admin", (tx) => start_next_finals_match(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => startNextFinalsMatch(tx, { tournamentId: t }));
   const bracket = tmatches(db, t, "Bracket");
   expect(bracket.length).toBe(1);
-  expect(seated(db, bracket[0]!.match_id).length).toBe(4);
+  expect(seated(db, bracket[0]!.matchId).length).toBe(4);
 });
 
-test("table_sizes_seat_everyone_evenly", () => {
+test("table sizes seat everyone evenly", () => {
   expect(tableSizes(6, 3)).toEqual([3, 3]);
   expect(tableSizes(7, 3)).toEqual([4, 3]);
   expect(tableSizes(8, 3)).toEqual([4, 4]);
@@ -272,23 +272,23 @@ test("table_sizes_seat_everyone_evenly", () => {
   }
 });
 
-test("every_entrant_plays_in_round_one", () => {
+test("every entrant plays in round one", () => {
   const db = adminDb();
   spawnExtraSim(db);
   const t = start(db, 1, 2, 3);
   const sizes = tmatches(db, t, "Swiss").map(
-    (tm) => seated(db, tm.match_id).length,
+    (tm) => seated(db, tm.matchId).length,
   );
   expect(sizes).toEqual([4, 3]);
 });
 
-test("an_oversized_table_scores_against_the_match_size", () => {
+test("an oversized table scores against the match size", () => {
   const db = adminDb();
   spawnExtraSim(db);
   const t = start(db, 2, 2, 3);
   const big = tmatches(db, t, "Swiss").find(
-    (tm) => seated(db, tm.match_id).length === 4,
-  )!.match_id;
+    (tm) => seated(db, tm.matchId).length === 4,
+  )!.matchId;
   runToEnd(db, big);
 
   // First is worth 3, as at a table of three, and fourth earns nothing.
@@ -302,7 +302,7 @@ test("an_oversized_table_scores_against_the_match_size", () => {
   expect(pointsByPlacing(db, t, big)).toEqual(expected);
 });
 
-test("a_tournament_with_an_awkward_field_still_finishes", () => {
+test("a tournament with an awkward field still finishes", () => {
   const db = adminDb();
   spawnExtraSim(db);
   const t = start(db, 2, 3, 3);
@@ -310,7 +310,7 @@ test("a_tournament_with_an_awkward_field_still_finishes", () => {
 
   expect(tournament(db, t).status.tag).toBe("Ended");
   expect(
-    entries(db, t).every((e) => e.swiss_points > 0),
+    entries(db, t).every((e) => e.swissPoints > 0),
     "everyone played",
   ).toBe(true);
   expect(entries(db, t).filter((e) => !e.eliminated).length).toBe(1);

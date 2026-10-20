@@ -28,15 +28,15 @@ import {
 import { identityFromClaims } from "./identity";
 import spacetimedb, {
   admin,
-  auction_schedule,
+  auctionSchedule,
   AuctionType,
   BotStrategy,
-  credential_nonce,
+  credentialNonce,
   holding,
-  lobby_timeout_schedule,
+  lobbyTimeoutSchedule,
   TeamSummary,
-  nonce_expiry_schedule,
-  auction_top_bid,
+  nonceExpirySchedule,
+  auctionTopBid,
 } from "./schema";
 import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
 import {
@@ -48,58 +48,58 @@ import {
   isActive,
   isUnderway,
   requireRegistration,
-  startNextFinalsMatch,
+  startFinalsMatch,
   startSwissRound,
 } from "./tournament";
 
 export default spacetimedb;
 
-// Reducers and views keep the snake_case names they had in the Rust module,
-// so clients call them exactly as before.
+// The SDK's snake_case conversion gives reducers and views the names they
+// had in the Rust module (`startTournament` is `start_tournament`), so
+// clients call them exactly as before.
 
 // ---------- Views ----------
 
 // A bot sees only its own letters (across any matches it's in). Clients
-// filter by match_id on their side.
-export const my_rack = spacetimedb.view(
+// filter by matchId on their side.
+export const myRack = spacetimedb.view(
   { public: true },
   t.array(holding.rowType),
   (ctx) => {
-    const cred = ctx.db.bot_credential.identity.find(ctx.sender);
+    const cred = ctx.db.botCredential.identity.find(ctx.sender);
     if (!cred) {
       return [];
     }
-    return [...ctx.db.holding.holding_by_bot.filter(cred.bot_id)];
+    return [...ctx.db.holding.holdingByBot.filter(cred.botId)];
   },
 );
 
-// my_team: the calling human's team. Resolves browser identities via
+// myTeam: the calling human's team. Resolves browser identities via
 // HumanLink to the underlying spacetimedb.com identity.
-export const my_team = spacetimedb.view(
+export const myTeam = spacetimedb.view(
   { public: true },
   t.option(TeamSummary),
   (ctx) => {
     const human = resolveHumanView(ctx);
-    const member = ctx.db.team_member.user.find(human);
+    const member = ctx.db.teamMember.user.find(human);
     if (!member) return undefined;
-    const team = ctx.db.team.id.find(member.team_id);
+    const team = ctx.db.team.id.find(member.teamId);
     if (!team) return undefined;
     let bot;
-    for (const b of ctx.db.bot.bot_by_team.filter(team.id)) {
+    for (const b of ctx.db.bot.botByTeam.filter(team.id)) {
       bot = b;
       break;
     }
     if (!bot) return undefined;
-    const credential_count = [
-      ...ctx.db.bot_credential.cred_by_bot.filter(bot.id),
-    ].length;
+    const credentialCount = [...ctx.db.botCredential.credByBot.filter(bot.id)]
+      .length;
     return {
-      team_id: team.id,
-      team_name: team.name,
-      bot_id: bot.id,
-      bot_name: bot.name,
+      teamId: team.id,
+      teamName: team.name,
+      botId: bot.id,
+      botName: bot.name,
       role: member.role,
-      credential_count,
+      credentialCount,
     };
   },
 );
@@ -108,20 +108,20 @@ export const my_team = spacetimedb.view(
 // BotCredential (real bots in the game) get an empty list; everyone else
 // sees the data for all currently-Running matches. Bounded by an indexed
 // nested-loop join through match status, so the result is small even as
-// the underlying private table grows. Ended-match top_bids live in the
-// public `auction_top_bid_archive` table; subscribe there for replays.
-export const visible_auction_top_bids = spacetimedb.view(
+// the underlying private table grows. Ended-match top bids live in the
+// public `auctionTopBidArchive` table; subscribe there for replays.
+export const visibleAuctionTopBids = spacetimedb.view(
   { public: true },
-  t.array(auction_top_bid.rowType),
+  t.array(auctionTopBid.rowType),
   (ctx) => {
-    if (ctx.db.bot_credential.identity.find(ctx.sender) != null) {
+    if (ctx.db.botCredential.identity.find(ctx.sender) != null) {
       return [];
     }
     const out = [];
-    for (const m of ctx.db.match_state.match_by_status.filter({
+    for (const m of ctx.db.matchState.matchByStatus.filter({
       tag: "Running",
     })) {
-      for (const top of ctx.db.auction_top_bid.top_bid_by_match.filter(m.id)) {
+      for (const top of ctx.db.auctionTopBid.topBidByMatch.filter(m.id)) {
         out.push(top);
       }
     }
@@ -130,23 +130,23 @@ export const visible_auction_top_bids = spacetimedb.view(
 );
 
 // Nonces the caller has minted. Private to the caller.
-export const my_nonces = spacetimedb.view(
+export const myNonces = spacetimedb.view(
   { public: true },
-  t.array(credential_nonce.rowType),
+  t.array(credentialNonce.rowType),
   (ctx) => {
     const human = resolveHumanView(ctx);
-    return [...ctx.db.credential_nonce.nonce_by_creator.filter(human)];
+    return [...ctx.db.credentialNonce.nonceByCreator.filter(human)];
   },
 );
 
 // The caller's admin row (resolved to spacetime.com identity), if they are
 // an admin.
-export const my_admin = spacetimedb.view(
+export const myAdmin = spacetimedb.view(
   { public: true },
   t.option(admin.rowType),
   (ctx) => {
     const human = resolveHumanView(ctx);
-    return ctx.db.admin.human_identity.find(human) ?? undefined;
+    return ctx.db.admin.humanIdentity.find(human) ?? undefined;
   },
 );
 
@@ -162,13 +162,13 @@ export const init = spacetimedb.init((ctx) => {
       console.error(`Bad SEED_ADMIN_HEX entry: ${hex}`);
       continue;
     }
-    if (ctx.db.admin.human_identity.find(identity) != null) {
+    if (ctx.db.admin.humanIdentity.find(identity) != null) {
       continue;
     }
     ctx.db.admin.insert({
-      human_identity: identity,
-      added_at: ctx.timestamp,
-      added_by: undefined,
+      humanIdentity: identity,
+      addedAt: ctx.timestamp,
+      addedBy: undefined,
     });
     console.info(`Seeded admin: ${hex}`);
   }
@@ -190,24 +190,24 @@ export const init = spacetimedb.init((ctx) => {
   openLobbyOrCreate(ctx);
 });
 
-export const client_connected = spacetimedb.clientConnected((ctx) => {
-  const cred = ctx.db.bot_credential.identity.find(ctx.sender);
+export const clientConnected = spacetimedb.clientConnected((ctx) => {
+  const cred = ctx.db.botCredential.identity.find(ctx.sender);
   if (cred) {
-    ctx.db.bot_credential.identity.update({
+    ctx.db.botCredential.identity.update({
       ...cred,
       connected: true,
-      last_seen: ctx.timestamp,
+      lastSeen: ctx.timestamp,
     });
   }
 });
 
-export const client_disconnected = spacetimedb.clientDisconnected((ctx) => {
-  const cred = ctx.db.bot_credential.identity.find(ctx.sender);
+export const clientDisconnected = spacetimedb.clientDisconnected((ctx) => {
+  const cred = ctx.db.botCredential.identity.find(ctx.sender);
   if (cred) {
-    ctx.db.bot_credential.identity.update({
+    ctx.db.botCredential.identity.update({
       ...cred,
       connected: false,
-      last_seen: ctx.timestamp,
+      lastSeen: ctx.timestamp,
     });
   }
 });
@@ -217,18 +217,18 @@ export const client_disconnected = spacetimedb.clientDisconnected((ctx) => {
 // CLI flow: spacetime call scrabblebot connect_id <web_identity>
 // ctx.sender here is the human (spacetime.com identity). The argument is
 // the anon web identity the user wants to link.
-export const connect_id = spacetimedb.reducer(
-  { web_identity: t.identity() },
-  (ctx, { web_identity }) => {
+export const connectId = spacetimedb.reducer(
+  { webIdentity: t.identity() },
+  (ctx, { webIdentity }) => {
     const human = ctx.sender;
-    if (web_identity.isEqual(human)) {
+    if (webIdentity.isEqual(human)) {
       throw new SenderError(
         "web identity is the same as your identity — nothing to link",
       );
     }
-    const existing = ctx.db.human_link.web_identity.find(web_identity);
+    const existing = ctx.db.humanLink.webIdentity.find(webIdentity);
     if (existing) {
-      if (existing.human_identity.isEqual(human)) {
+      if (existing.humanIdentity.isEqual(human)) {
         return; // idempotent
       }
       throw new SenderError(
@@ -236,10 +236,10 @@ export const connect_id = spacetimedb.reducer(
           "Reset the browser identity first and try again.",
       );
     }
-    ctx.db.human_link.insert({
-      web_identity,
-      human_identity: human,
-      linked_at: ctx.timestamp,
+    ctx.db.humanLink.insert({
+      webIdentity,
+      humanIdentity: human,
+      linkedAt: ctx.timestamp,
     });
     console.info(`Linked web identity to human ${human.toHexString()}`);
   },
@@ -248,8 +248,8 @@ export const connect_id = spacetimedb.reducer(
 // ---------- Admins ----------
 
 // Claim the first admin slot. Allowed only when no admins exist yet. After
-// this, new admins must be added by an existing admin via `add_admin`.
-export const bootstrap_admin = spacetimedb.reducer((ctx) => {
+// this, new admins must be added by an existing admin via `addAdmin`.
+export const bootstrapAdmin = spacetimedb.reducer((ctx) => {
   if (ctx.db.admin.count() > 0n) {
     throw new SenderError(
       "Admins already exist — ask one to add you with add_admin",
@@ -257,42 +257,42 @@ export const bootstrap_admin = spacetimedb.reducer((ctx) => {
   }
   const human = resolveHuman(ctx);
   ctx.db.admin.insert({
-    human_identity: human,
-    added_at: ctx.timestamp,
-    added_by: undefined,
+    humanIdentity: human,
+    addedAt: ctx.timestamp,
+    addedBy: undefined,
   });
   console.info(`Bootstrap admin: ${human.toHexString()}`);
 });
 
-export const add_admin = spacetimedb.reducer(
-  { human_identity: t.identity() },
-  (ctx, { human_identity }) => {
+export const addAdmin = spacetimedb.reducer(
+  { humanIdentity: t.identity() },
+  (ctx, { humanIdentity }) => {
     requireAdmin(ctx);
-    if (ctx.db.admin.human_identity.find(human_identity) != null) {
+    if (ctx.db.admin.humanIdentity.find(humanIdentity) != null) {
       throw new SenderError("Already an admin");
     }
     const caller = resolveHuman(ctx);
     ctx.db.admin.insert({
-      human_identity,
-      added_at: ctx.timestamp,
-      added_by: caller,
+      humanIdentity,
+      addedAt: ctx.timestamp,
+      addedBy: caller,
     });
-    console.info(`Admin added: ${human_identity.toHexString()}`);
+    console.info(`Admin added: ${humanIdentity.toHexString()}`);
   },
 );
 
-export const remove_admin = spacetimedb.reducer(
-  { human_identity: t.identity() },
-  (ctx, { human_identity }) => {
+export const removeAdmin = spacetimedb.reducer(
+  { humanIdentity: t.identity() },
+  (ctx, { humanIdentity }) => {
     requireAdmin(ctx);
     const caller = resolveHuman(ctx);
-    if (caller.isEqual(human_identity)) {
+    if (caller.isEqual(humanIdentity)) {
       throw new SenderError("You can't remove yourself");
     }
-    if (ctx.db.admin.human_identity.find(human_identity) == null) {
+    if (ctx.db.admin.humanIdentity.find(humanIdentity) == null) {
       throw new SenderError("Not an admin");
     }
-    ctx.db.admin.human_identity.delete(human_identity);
+    ctx.db.admin.humanIdentity.delete(humanIdentity);
   },
 );
 
@@ -300,153 +300,150 @@ export const remove_admin = spacetimedb.reducer(
 
 // Create a team with the caller as Owner, plus the team's bot row. The bot
 // gets no credentials yet — the team must mint a credential nonce next.
-export const create_team = spacetimedb.reducer(
-  { team_name: t.string(), bot_name: t.string() },
+export const createTeam = spacetimedb.reducer(
+  { teamName: t.string(), botName: t.string() },
   (ctx, args) => {
-    const team_name = trim(args.team_name);
-    const bot_name = trim(args.bot_name);
-    if (team_name.length === 0 || byteLength(team_name) > 48) {
+    const teamName = trim(args.teamName);
+    const botName = trim(args.botName);
+    if (teamName.length === 0 || byteLength(teamName) > 48) {
       throw new SenderError("Team name must be 1-48 characters");
     }
-    if (bot_name.length === 0 || byteLength(bot_name) > 32) {
+    if (botName.length === 0 || byteLength(botName) > 32) {
       throw new SenderError("Bot name must be 1-32 characters");
     }
     const human = resolveHuman(ctx);
-    if (ctx.db.team.name.find(team_name) != null) {
+    if (ctx.db.team.name.find(teamName) != null) {
       throw new SenderError("Team name already taken");
     }
-    if (ctx.db.team_member.user.find(human) != null) {
+    if (ctx.db.teamMember.user.find(human) != null) {
       throw new SenderError("You're already on a team");
     }
-    if (ctx.db.bot.name.find(bot_name) != null) {
+    if (ctx.db.bot.name.find(botName) != null) {
       throw new SenderError("Bot name already taken");
     }
 
     const team = ctx.db.team.insert({
       id: 0n,
-      name: team_name,
-      created_at: ctx.timestamp,
+      name: teamName,
+      createdAt: ctx.timestamp,
     });
     const bot = ctx.db.bot.insert({
       id: 0n,
-      name: bot_name,
-      team_id: team.id,
-      is_simulated: false,
+      name: botName,
+      teamId: team.id,
+      isSimulated: false,
       strategy: { tag: "Human" },
-      created_at: ctx.timestamp,
+      createdAt: ctx.timestamp,
     });
-    ctx.db.team_member.insert({
+    ctx.db.teamMember.insert({
       id: 0n,
-      team_id: team.id,
+      teamId: team.id,
       user: human,
       role: { tag: "Owner" },
-      joined_at: ctx.timestamp,
+      joinedAt: ctx.timestamp,
     });
     console.info(
-      `Team '${team_name}' (id ${team.id}) created with bot '${bot_name}' (id ${bot.id})`,
+      `Team '${teamName}' (id ${team.id}) created with bot '${botName}' (id ${bot.id})`,
     );
   },
 );
 
-export const join_team = spacetimedb.reducer(
-  { team_name: t.string() },
+export const joinTeam = spacetimedb.reducer(
+  { teamName: t.string() },
   (ctx, args) => {
-    const team_name = trim(args.team_name);
-    const team = ctx.db.team.name.find(team_name);
+    const teamName = trim(args.teamName);
+    const team = ctx.db.team.name.find(teamName);
     if (!team) {
       throw new SenderError("No such team");
     }
     const human = resolveHuman(ctx);
-    if (ctx.db.team_member.user.find(human) != null) {
+    if (ctx.db.teamMember.user.find(human) != null) {
       throw new SenderError("You're already on a team");
     }
-    ctx.db.team_member.insert({
+    ctx.db.teamMember.insert({
       id: 0n,
-      team_id: team.id,
+      teamId: team.id,
       user: human,
       role: { tag: "Member" },
-      joined_at: ctx.timestamp,
+      joinedAt: ctx.timestamp,
     });
-    console.info(`Human ${human.toHexString()} joined team '${team_name}'`);
+    console.info(`Human ${human.toHexString()} joined team '${teamName}'`);
   },
 );
 
-export const leave_team = spacetimedb.reducer((ctx) => {
+export const leaveTeam = spacetimedb.reducer((ctx) => {
   const human = resolveHuman(ctx);
-  const me = ctx.db.team_member.user.find(human);
+  const me = ctx.db.teamMember.user.find(human);
   if (!me) {
     throw new SenderError("You're not on a team");
   }
-  const team_id = me.team_id;
-  ctx.db.team_member.id.delete(me.id);
-  const remaining = [...ctx.db.team_member.tmember_by_team.filter(team_id)]
-    .length;
+  const teamId = me.teamId;
+  ctx.db.teamMember.id.delete(me.id);
+  const remaining = [...ctx.db.teamMember.tmemberByTeam.filter(teamId)].length;
   if (remaining === 0) {
     // Delete the team's bot too, with its credentials and any nonces
     // that would otherwise mint new credentials for it.
-    const bot_ids = [...ctx.db.bot.bot_by_team.filter(team_id)].map(
-      (b) => b.id,
-    );
+    const botIds = [...ctx.db.bot.botByTeam.filter(teamId)].map((b) => b.id);
     // A tournament can't seat a deleted bot, so it would stall at the
     // bot's next match.
-    if (bot_ids.some((bid) => heldForTournament(ctx, bid))) {
+    if (botIds.some((bid) => heldForTournament(ctx, bid))) {
       throw new SenderError(
         "Your bot is still playing in a tournament; the last member can leave once it's knocked out or the tournament ends",
       );
     }
-    for (const bid of bot_ids) {
+    for (const bid of botIds) {
       // Withdraw it from tournaments that haven't started. Entries in
       // tournaments it has played stay, as the record of what happened.
-      for (const e of [...ctx.db.tournament_entry.te_by_bot.filter(bid)]) {
-        const tour = ctx.db.tournament.id.find(e.tournament_id);
+      for (const e of [...ctx.db.tournamentEntry.teByBot.filter(bid)]) {
+        const tour = ctx.db.tournament.id.find(e.tournamentId);
         if (tour?.status.tag === "Registration") {
-          ctx.db.tournament_entry.id.delete(e.id);
+          ctx.db.tournamentEntry.id.delete(e.id);
         }
       }
-      const cred_ids = [...ctx.db.bot_credential.cred_by_bot.filter(bid)].map(
+      const credIds = [...ctx.db.botCredential.credByBot.filter(bid)].map(
         (c) => c.identity,
       );
-      for (const cid of cred_ids) {
-        ctx.db.bot_credential.identity.delete(cid);
+      for (const cid of credIds) {
+        ctx.db.botCredential.identity.delete(cid);
       }
-      const nonce_ids = [...ctx.db.credential_nonce.iter()]
-        .filter((n) => n.bot_id === bid)
+      const nonceIds = [...ctx.db.credentialNonce.iter()]
+        .filter((n) => n.botId === bid)
         .map((n) => n.id);
-      for (const nid of nonce_ids) {
-        ctx.db.credential_nonce.id.delete(nid);
+      for (const nid of nonceIds) {
+        ctx.db.credentialNonce.id.delete(nid);
       }
-      const lobby_rows = [...ctx.db.lobby_member.lm_by_bot.filter(bid)].map(
+      const lobbyRows = [...ctx.db.lobbyMember.lmByBot.filter(bid)].map(
         (m) => m.id,
       );
-      for (const lid of lobby_rows) {
-        ctx.db.lobby_member.id.delete(lid);
+      for (const lid of lobbyRows) {
+        ctx.db.lobbyMember.id.delete(lid);
       }
       ctx.db.bot.id.delete(bid);
     }
-    ctx.db.team.id.delete(team_id);
-    console.info(`Team ${team_id} dissolved (no members left)`);
+    ctx.db.team.id.delete(teamId);
+    console.info(`Team ${teamId} dissolved (no members left)`);
   }
 });
 
-export const promote_to_owner = spacetimedb.reducer(
-  { target_user: t.identity() },
-  (ctx, { target_user }) => {
+export const promoteToOwner = spacetimedb.reducer(
+  { targetUser: t.identity() },
+  (ctx, { targetUser }) => {
     const human = resolveHuman(ctx);
-    const me = ctx.db.team_member.user.find(human);
+    const me = ctx.db.teamMember.user.find(human);
     if (!me) {
       throw new SenderError("You're not on a team");
     }
     if (me.role.tag !== "Owner") {
       throw new SenderError("Only owners can promote");
     }
-    const target = ctx.db.team_member.user.find(target_user);
+    const target = ctx.db.teamMember.user.find(targetUser);
     if (!target) {
       throw new SenderError("Target user is not on a team");
     }
-    if (target.team_id !== me.team_id) {
+    if (target.teamId !== me.teamId) {
       throw new SenderError("Target user is not on your team");
     }
-    ctx.db.team_member.id.update({ ...target, role: { tag: "Owner" } });
+    ctx.db.teamMember.id.update({ ...target, role: { tag: "Owner" } });
   },
 );
 
@@ -454,32 +451,32 @@ export const promote_to_owner = spacetimedb.reducer(
 
 // A team member mints a single-use nonce that can be redeemed by any client
 // to receive a fresh credential for their team's bot.
-export const mint_credential_nonce = spacetimedb.reducer((ctx) => {
+export const mintCredentialNonce = spacetimedb.reducer((ctx) => {
   const human = resolveHuman(ctx);
-  const member = ctx.db.team_member.user.find(human);
+  const member = ctx.db.teamMember.user.find(human);
   if (!member) {
     throw new SenderError("You're not on a team — create or join one first");
   }
-  const bot = [...ctx.db.bot.iter()].find((b) => b.team_id === member.team_id);
+  const bot = [...ctx.db.bot.iter()].find((b) => b.teamId === member.teamId);
   if (!bot) {
     throw new SenderError("Your team has no bot");
   }
   let code = generateNonceCode(ctx, 0);
-  for (let attempt = 1; ctx.db.credential_nonce.code.find(code); attempt++) {
+  for (let attempt = 1; ctx.db.credentialNonce.code.find(code); attempt++) {
     code = generateNonceCode(ctx, attempt);
   }
-  const expires_at = afterSeconds(ctx.timestamp, NONCE_TTL_SECONDS);
-  const nonce = ctx.db.credential_nonce.insert({
+  const expiresAt = afterSeconds(ctx.timestamp, NONCE_TTL_SECONDS);
+  const nonce = ctx.db.credentialNonce.insert({
     id: 0n,
     code,
-    bot_id: bot.id,
+    botId: bot.id,
     creator: human,
-    expires_at,
+    expiresAt,
   });
-  ctx.db.nonce_expiry_schedule.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(expires_at.microsSinceUnixEpoch),
-    nonce_id: nonce.id,
+  ctx.db.nonceExpirySchedule.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(expiresAt.microsSinceUnixEpoch),
+    nonceId: nonce.id,
   });
   console.info(
     `Nonce minted for bot ${bot.id} (expires in ${NONCE_TTL_SECONDS}s)`,
@@ -489,49 +486,48 @@ export const mint_credential_nonce = spacetimedb.reducer((ctx) => {
 // A freshly-connected client (no token yet, OR a token unrelated to a bot)
 // redeems a nonce. The client's identity becomes a new credential for the
 // nonce's bot. The nonce is then deleted.
-export const claim_credential = spacetimedb.reducer(
+export const claimCredential = spacetimedb.reducer(
   { code: t.string() },
   (ctx, { code }) => {
-    const nonce = ctx.db.credential_nonce.code.find(code);
+    const nonce = ctx.db.credentialNonce.code.find(code);
     if (!nonce) {
       throw new SenderError("No such nonce");
     }
     // Its expiry job may not have run yet. (Deleting it here would be
     // rolled back along with everything else when we throw.)
     if (
-      ctx.timestamp.microsSinceUnixEpoch >=
-      nonce.expires_at.microsSinceUnixEpoch
+      ctx.timestamp.microsSinceUnixEpoch >= nonce.expiresAt.microsSinceUnixEpoch
     ) {
       throw new SenderError("This nonce has expired");
     }
     // Is the caller already a credential for ANY bot? Disallow — a fresh
     // client (no prior credential) must claim.
-    if (ctx.db.bot_credential.identity.find(ctx.sender) != null) {
+    if (ctx.db.botCredential.identity.find(ctx.sender) != null) {
       throw new SenderError("Your identity is already a credential for a bot");
     }
-    ctx.db.bot_credential.insert({
+    ctx.db.botCredential.insert({
       identity: ctx.sender,
-      bot_id: nonce.bot_id,
+      botId: nonce.botId,
       connected: true,
-      last_seen: ctx.timestamp,
+      lastSeen: ctx.timestamp,
     });
-    ctx.db.credential_nonce.id.delete(nonce.id);
-    console.info(`Credential claimed for bot ${nonce.bot_id}`);
+    ctx.db.credentialNonce.id.delete(nonce.id);
+    console.info(`Credential claimed for bot ${nonce.botId}`);
   },
 );
 
-export const nonce_expiry_tick = spacetimedb.reducer(
-  { onSchedule: nonce_expiry_schedule },
-  { job: nonce_expiry_schedule.rowType },
+export const nonceExpiryTick = spacetimedb.reducer(
+  { onSchedule: nonceExpirySchedule },
+  { job: nonceExpirySchedule.rowType },
   (ctx, { job }) => {
     requireScheduler(ctx);
-    ctx.db.credential_nonce.id.delete(job.nonce_id);
+    ctx.db.credentialNonce.id.delete(job.nonceId);
   },
 );
 
 // ---------- Simulated bot ----------
 
-export const spawn_simulated_bot = spacetimedb.reducer(
+export const spawnSimulatedBot = spacetimedb.reducer(
   { name: t.string(), strategy: BotStrategy },
   (ctx, { name, strategy }) => {
     requireAdmin(ctx);
@@ -548,54 +544,54 @@ export const spawn_simulated_bot = spacetimedb.reducer(
     // Sim bots don't belong to a team and aren't player-owned. They get a
     // fabricated credential identity so the auction/word path stays uniform.
     const identity = identityFromClaims("sim", trimmed);
-    if (ctx.db.bot_credential.identity.find(identity) != null) {
+    if (ctx.db.botCredential.identity.find(identity) != null) {
       throw new SenderError("Simulated bot already exists");
     }
     const bot = ctx.db.bot.insert({
       id: 0n,
       name: trimmed,
-      team_id: 0n,
-      is_simulated: true,
+      teamId: 0n,
+      isSimulated: true,
       strategy,
-      created_at: ctx.timestamp,
+      createdAt: ctx.timestamp,
     });
-    ctx.db.bot_credential.insert({
+    ctx.db.botCredential.insert({
       identity,
-      bot_id: bot.id,
+      botId: bot.id,
       connected: true,
-      last_seen: ctx.timestamp,
+      lastSeen: ctx.timestamp,
     });
     console.info(`Simulated bot spawned: ${trimmed} (id ${bot.id})`);
   },
 );
 
-// One-shot migration helper: move historical `auction_top_bid` rows for
-// ended matches into the public `auction_top_bid_archive`. New matches
+// One-shot migration helper: move historical `auctionTopBid` rows for
+// ended matches into the public `auctionTopBidArchive`. New matches
 // archive automatically via `onMatchEnded`; this drains the backlog from
 // before the archive existed. Chunked because the table held ~1.4M rows;
-// `max_rows` caps the work per call so the reducer stays under the time
+// `maxRows` caps the work per call so the reducer stays under the time
 // budget. Admin re-invokes until it reports zero moved.
-export const backfill_top_bid_archive = spacetimedb.reducer(
-  { max_rows: t.u32() },
-  (ctx, { max_rows }) => {
+export const backfillTopBidArchive = spacetimedb.reducer(
+  { maxRows: t.u32() },
+  (ctx, { maxRows }) => {
     requireAdmin(ctx);
-    if (max_rows === 0) {
+    if (maxRows === 0) {
       throw new SenderError("max_rows must be > 0");
     }
     let moved = 0;
     outer: for (const m of [
-      ...ctx.db.match_state.match_by_status.filter({ tag: "Ended" }),
+      ...ctx.db.matchState.matchByStatus.filter({ tag: "Ended" }),
     ]) {
-      const live = [...ctx.db.auction_top_bid.top_bid_by_match.filter(m.id)];
+      const live = [...ctx.db.auctionTopBid.topBidByMatch.filter(m.id)];
       for (const top of live) {
-        ctx.db.auction_top_bid_archive.insert({
-          auction_id: top.auction_id,
-          match_id: top.match_id,
-          top_bid: top.top_bid,
+        ctx.db.auctionTopBidArchive.insert({
+          auctionId: top.auctionId,
+          matchId: top.matchId,
+          topBid: top.topBid,
         });
-        ctx.db.auction_top_bid.auction_id.delete(top.auction_id);
+        ctx.db.auctionTopBid.auctionId.delete(top.auctionId);
         moved += 1;
-        if (moved >= max_rows) {
+        if (moved >= maxRows) {
           break outer;
         }
       }
@@ -609,57 +605,57 @@ export const backfill_top_bid_archive = spacetimedb.reducer(
 // Sets the auction length, starting rack size and lobby size for matches
 // and lobbies created from now on. Matches being played keep the values
 // they started with, and so does the open lobby.
-export const set_matchmaker_config = spacetimedb.reducer(
+export const setMatchmakerConfig = spacetimedb.reducer(
   {
-    starting_rack_size: t.u32(),
-    lobby_max_size: t.u32(),
-    auction_duration_ms: t.u64(),
+    startingRackSize: t.u32(),
+    lobbyMaxSize: t.u32(),
+    auctionDurationMs: t.u64(),
   },
-  (ctx, { starting_rack_size, lobby_max_size, auction_duration_ms }) => {
+  (ctx, { startingRackSize, lobbyMaxSize, auctionDurationMs }) => {
     requireAdmin(ctx);
-    if (starting_rack_size > 20) {
+    if (startingRackSize > 20) {
       throw new SenderError("Starting rack size must be 0-20");
     }
-    if (lobby_max_size < 2 || lobby_max_size > 12) {
+    if (lobbyMaxSize < 2 || lobbyMaxSize > 12) {
       throw new SenderError("Lobby size must be 2-12");
     }
-    if (auction_duration_ms < 250n || auction_duration_ms > 10_000n) {
+    if (auctionDurationMs < 250n || auctionDurationMs > 10_000n) {
       throw new SenderError("Auction length must be 250-10000 ms");
     }
     // A full lobby's racks, plus a tile for the first auction, must fit in
     // the bag.
-    if (lobby_max_size * starting_rack_size >= BAG_SIZE) {
+    if (lobbyMaxSize * startingRackSize >= BAG_SIZE) {
       throw new SenderError(
         `A full lobby would be dealt more tiles than the bag's ${BAG_SIZE}`,
       );
     }
     const row = {
       id: 0,
-      starting_rack_size,
-      lobby_max_size,
-      auction_duration_ms,
+      startingRackSize,
+      lobbyMaxSize,
+      auctionDurationMs,
     };
-    if (ctx.db.matchmaker_config.id.find(0)) {
-      ctx.db.matchmaker_config.id.update(row);
+    if (ctx.db.matchmakerConfig.id.find(0)) {
+      ctx.db.matchmakerConfig.id.update(row);
     } else {
-      ctx.db.matchmaker_config.insert(row);
+      ctx.db.matchmakerConfig.insert(row);
     }
   },
 );
 
 // ---------- Bidding ----------
 
-export const submit_bid = spacetimedb.reducer(
-  { auction_id: t.u64(), amount: t.i64() },
-  (ctx, { auction_id, amount }) => {
+export const submitBid = spacetimedb.reducer(
+  { auctionId: t.u64(), amount: t.i64() },
+  (ctx, { auctionId, amount }) => {
     if (amount < 0n) {
       throw new SenderError("Bid must be non-negative");
     }
-    const bot_id = callerBotId(ctx);
-    if (bot_id === undefined) {
+    const botId = callerBotId(ctx);
+    if (botId === undefined) {
       throw new SenderError("Your identity is not a credential for any bot");
     }
-    const auction = ctx.db.auction.id.find(auction_id);
+    const auction = ctx.db.auction.id.find(auctionId);
     if (!auction) {
       throw new SenderError("Unknown auction");
     }
@@ -668,70 +664,70 @@ export const submit_bid = spacetimedb.reducer(
     }
     if (
       ctx.timestamp.microsSinceUnixEpoch >=
-      auction.closes_at.microsSinceUnixEpoch
+      auction.closesAt.microsSinceUnixEpoch
     ) {
       throw new SenderError("Auction window expired");
     }
-    const participant = findParticipant(ctx, auction.match_id, bot_id);
+    const participant = findParticipant(ctx, auction.matchId, botId);
     if (!participant) {
       throw new SenderError("Not in this match");
     }
     if (participant.balance < amount) {
       throw new SenderError("Insufficient balance");
     }
-    replaceBid(ctx, auction_id, bot_id, amount);
+    replaceBid(ctx, auctionId, botId, amount);
   },
 );
 
 // ---------- Word play ----------
 
-export const submit_word = spacetimedb.reducer(
-  { match_id: t.u64(), word: t.string() },
-  (ctx, { match_id, word }) => {
-    const m = ctx.db.match_state.id.find(match_id);
+export const submitWord = spacetimedb.reducer(
+  { matchId: t.u64(), word: t.string() },
+  (ctx, { matchId, word }) => {
+    const m = ctx.db.matchState.id.find(matchId);
     if (!m) {
       throw new SenderError("Unknown match");
     }
     if (m.status.tag !== "Running") {
       throw new SenderError("Match not running");
     }
-    const bot_id = callerBotId(ctx);
-    if (bot_id === undefined) {
+    const botId = callerBotId(ctx);
+    if (botId === undefined) {
       throw new SenderError("Your identity is not a credential for any bot");
     }
-    const participant = findParticipant(ctx, match_id, bot_id);
+    const participant = findParticipant(ctx, matchId, botId);
     if (!participant) {
       throw new SenderError("Not in this match");
     }
 
-    const word_upper = asciiUppercase(word);
-    if (byteLength(word_upper) < 2) {
+    const wordUpper = asciiUppercase(word);
+    if (byteLength(wordUpper) < 2) {
       throw new SenderError("Word must be at least 2 letters");
     }
-    if (!isAsciiUppercase(word_upper)) {
+    if (!isAsciiUppercase(wordUpper)) {
       throw new SenderError("Word must be A-Z only");
     }
-    if (!isValidWord(word_upper)) {
-      throw new SenderError(`'${word_upper}' is not in the dictionary`);
+    if (!isValidWord(wordUpper)) {
+      throw new SenderError(`'${wordUpper}' is not in the dictionary`);
     }
 
-    orThrow(playWord(ctx, participant, word_upper));
+    orThrow(playWord(ctx, participant, wordUpper));
   },
 );
 
 // ---------- Lobby ----------
 
-export const join_lobby = spacetimedb.reducer((ctx) => {
-  const bot_id = callerBotId(ctx);
-  if (bot_id === undefined) {
+export const joinLobby = spacetimedb.reducer((ctx) => {
+  const botId = callerBotId(ctx);
+  if (botId === undefined) {
     throw new SenderError("Your identity is not a credential for any bot");
   }
 
   // Bots can't be in two places at once.
-  if (botInRunningMatch(ctx, bot_id)) {
+  if (botInRunningMatch(ctx, botId)) {
     throw new SenderError("You're already in a running match");
   }
-  if (heldForTournament(ctx, bot_id)) {
+  if (heldForTournament(ctx, botId)) {
     throw new SenderError(
       "You're playing in a tournament; the lobby reopens to you when you're knocked out or it ends",
     );
@@ -740,39 +736,39 @@ export const join_lobby = spacetimedb.reducer((ctx) => {
   const lobby = openLobbyOrCreate(ctx);
 
   // Idempotent: already in this open lobby is a no-op.
-  const already = [...ctx.db.lobby_member.lm_by_lobby.filter(lobby.id)].some(
-    (m) => m.bot_id === bot_id,
+  const already = [...ctx.db.lobbyMember.lmByLobby.filter(lobby.id)].some(
+    (m) => m.botId === botId,
   );
   if (already) {
     return;
   }
 
-  ctx.db.lobby_member.insert({
+  ctx.db.lobbyMember.insert({
     id: 0n,
-    lobby_id: lobby.id,
-    bot_id,
-    joined_at: ctx.timestamp,
+    lobbyId: lobby.id,
+    botId,
+    joinedAt: ctx.timestamp,
   });
 
   // Auto-start if the lobby is now full of REAL bots (sim bots only enter
   // via timeout padding).
-  const real_count = [
-    ...ctx.db.lobby_member.lm_by_lobby.filter(lobby.id),
-  ].filter((m) => {
-    const b = ctx.db.bot.id.find(m.bot_id);
-    return b ? !b.is_simulated : false;
-  }).length;
-  if (real_count >= lobby.max_size) {
+  const realCount = [...ctx.db.lobbyMember.lmByLobby.filter(lobby.id)].filter(
+    (m) => {
+      const b = ctx.db.bot.id.find(m.botId);
+      return b ? !b.isSimulated : false;
+    },
+  ).length;
+  if (realCount >= lobby.maxSize) {
     resolveLobby(ctx, lobby.id, false);
   }
 });
 
-export const lobby_timeout_tick = spacetimedb.reducer(
-  { onSchedule: lobby_timeout_schedule },
-  { job: lobby_timeout_schedule.rowType },
+export const lobbyTimeoutTick = spacetimedb.reducer(
+  { onSchedule: lobbyTimeoutSchedule },
+  { job: lobbyTimeoutSchedule.rowType },
   (ctx, { job }) => {
     requireScheduler(ctx);
-    resolveLobby(ctx, job.lobby_id, true);
+    resolveLobby(ctx, job.lobbyId, true);
   },
 );
 
@@ -780,22 +776,22 @@ export const lobby_timeout_tick = spacetimedb.reducer(
 
 // An admin creates a tournament, bots register for it from their own
 // processes, and the admin starts it once enough have signed up.
-export const create_tournament = spacetimedb.reducer(
+export const createTournament = spacetimedb.reducer(
   {
-    swiss_rounds_total: t.u32(),
-    top_cut: t.u32(),
-    match_size: t.u32(),
-    auction_type: AuctionType,
+    swissRoundsTotal: t.u32(),
+    topCut: t.u32(),
+    matchSize: t.u32(),
+    auctionType: AuctionType,
   },
-  (ctx, { swiss_rounds_total, top_cut, match_size, auction_type }) => {
+  (ctx, { swissRoundsTotal, topCut, matchSize, auctionType }) => {
     requireAdmin(ctx);
-    if (match_size < 2) {
+    if (matchSize < 2) {
       throw new SenderError("Tournament match_size must be >= 2");
     }
-    if (swiss_rounds_total < 1) {
+    if (swissRoundsTotal < 1) {
       throw new SenderError("Need at least 1 Swiss round");
     }
-    if (top_cut < 2) {
+    if (topCut < 2) {
       throw new SenderError("top_cut must be >= 2");
     }
     if ([...ctx.db.tournament.iter()].some(isActive)) {
@@ -804,14 +800,14 @@ export const create_tournament = spacetimedb.reducer(
     const tour = ctx.db.tournament.insert({
       id: 0n,
       status: { tag: "Registration" },
-      swiss_rounds_total,
-      current_round: 0,
-      top_cut,
-      match_size,
-      auction_type,
-      created_at: ctx.timestamp,
-      ended_at: undefined,
-      winner_bot_id: undefined,
+      swissRoundsTotal,
+      currentRound: 0,
+      topCut,
+      matchSize,
+      auctionType,
+      createdAt: ctx.timestamp,
+      endedAt: undefined,
+      winnerBotId: undefined,
     });
     console.info(`Tournament ${tour.id} created; registration open`);
   },
@@ -819,57 +815,57 @@ export const create_tournament = spacetimedb.reducer(
 
 // Called by a bot's own process: the caller must be one of the bot's
 // credentials, which a browser identity never is.
-export const register_for_tournament = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
-    const bot_id = callerBotId(ctx);
-    if (bot_id === undefined) {
+export const registerForTournament = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
+    const botId = callerBotId(ctx);
+    if (botId === undefined) {
       throw new SenderError("Your identity is not a credential for any bot");
     }
-    requireRegistration(ctx, tournament_id);
-    if (entryFor(ctx, tournament_id, bot_id)) {
+    requireRegistration(ctx, tournamentId);
+    if (entryFor(ctx, tournamentId, botId)) {
       return; // idempotent
     }
-    addEntry(ctx, tournament_id, bot_id);
-    console.info(`Bot ${bot_id} registered for tournament ${tournament_id}`);
+    addEntry(ctx, tournamentId, botId);
+    console.info(`Bot ${botId} registered for tournament ${tournamentId}`);
   },
 );
 
-export const unregister_from_tournament = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
-    const bot_id = callerBotId(ctx);
-    if (bot_id === undefined) {
+export const unregisterFromTournament = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
+    const botId = callerBotId(ctx);
+    if (botId === undefined) {
       throw new SenderError("Your identity is not a credential for any bot");
     }
-    requireRegistration(ctx, tournament_id);
-    const entry = entryFor(ctx, tournament_id, bot_id);
+    requireRegistration(ctx, tournamentId);
+    const entry = entryFor(ctx, tournamentId, botId);
     if (entry) {
-      ctx.db.tournament_entry.id.delete(entry.id);
+      ctx.db.tournamentEntry.id.delete(entry.id);
     }
   },
 );
 
 // Enters every sim bot, so an admin can fill out the field for a rehearsal
 // or a small event.
-export const register_sim_bots = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
+export const registerSimBots = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    requireRegistration(ctx, tournament_id);
+    requireRegistration(ctx, tournamentId);
     for (const bot of [...ctx.db.bot.iter()]) {
-      if (bot.is_simulated && !entryFor(ctx, tournament_id, bot.id)) {
-        addEntry(ctx, tournament_id, bot.id);
+      if (bot.isSimulated && !entryFor(ctx, tournamentId, bot.id)) {
+        addEntry(ctx, tournamentId, bot.id);
       }
     }
   },
 );
 
-export const cancel_tournament = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
+export const cancelTournament = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    const tour = ctx.db.tournament.id.find(tournament_id);
+    const tour = ctx.db.tournament.id.find(tournamentId);
     if (!tour) {
       throw new SenderError("Unknown tournament");
     }
@@ -879,57 +875,57 @@ export const cancel_tournament = spacetimedb.reducer(
       );
     }
     for (const e of [
-      ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
+      ...ctx.db.tournamentEntry.teByTournament.filter(tournamentId),
     ]) {
-      ctx.db.tournament_entry.id.delete(e.id);
+      ctx.db.tournamentEntry.id.delete(e.id);
     }
-    ctx.db.tournament.id.delete(tournament_id);
-    console.info(`Tournament ${tournament_id} cancelled`);
+    ctx.db.tournament.id.delete(tournamentId);
+    console.info(`Tournament ${tournamentId} cancelled`);
   },
 );
 
-export const start_tournament = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
+export const startTournament = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    const tour = ctx.db.tournament.id.find(tournament_id);
+    const tour = ctx.db.tournament.id.find(tournamentId);
     if (!tour) {
       throw new SenderError("Unknown tournament");
     }
     if (tour.status.tag !== "Registration") {
       throw new SenderError("Tournament has already started");
     }
-    const entries = dropEntriesWithoutBots(ctx, tournament_id);
-    if (entries.length < tour.match_size) {
+    const entries = dropEntriesWithoutBots(ctx, tournamentId);
+    if (entries.length < tour.matchSize) {
       throw new SenderError(
-        `Need at least ${tour.match_size} registered bots to start`,
+        `Need at least ${tour.matchSize} registered bots to start`,
       );
     }
     ctx.db.tournament.id.update({ ...tour, status: { tag: "Swiss" } });
     // Entrants waiting in the casual lobby leave it. From now on they can't
     // join one.
-    for (const lobby of ctx.db.lobby.lobby_by_status.filter({ tag: "Open" })) {
-      for (const m of [...ctx.db.lobby_member.lm_by_lobby.filter(lobby.id)]) {
-        if (entries.some((e) => e.bot_id === m.bot_id)) {
-          ctx.db.lobby_member.id.delete(m.id);
+    for (const lobby of ctx.db.lobby.lobbyByStatus.filter({ tag: "Open" })) {
+      for (const m of [...ctx.db.lobbyMember.lmByLobby.filter(lobby.id)]) {
+        if (entries.some((e) => e.botId === m.botId)) {
+          ctx.db.lobbyMember.id.delete(m.id);
         }
       }
     }
     // A real bot can only play one match at a time, so round 1 waits for
     // entrants still in casual matches. With bots cycling through the
     // lobby, there's rarely a moment when none are.
-    const busy = entrantsStillPlaying(ctx, tournament_id);
+    const busy = entrantsStillPlaying(ctx, tournamentId);
     if (busy.length > 0) {
       console.info(
-        `Tournament ${tournament_id} started with ${entries.length} entrants; round 1 waits for ${busy
+        `Tournament ${tournamentId} started with ${entries.length} entrants; round 1 waits for ${busy
           .map((b) => b.name)
           .join(", ")}`,
       );
       return;
     }
-    orThrow(startSwissRound(ctx, tournament_id, 1));
+    orThrow(startSwissRound(ctx, tournamentId, 1));
     console.info(
-      `Tournament ${tournament_id} started with ${entries.length} entrants`,
+      `Tournament ${tournamentId} started with ${entries.length} entrants`,
     );
   },
 );
@@ -937,11 +933,11 @@ export const start_tournament = spacetimedb.reducer(
 // Stops a tournament that's under way, for when it can't or shouldn't
 // finish. Its matches in progress play out, but their results no longer
 // count, and its entrants are free to play in the lobby again.
-export const force_end_tournament = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
+export const forceEndTournament = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    const tour = ctx.db.tournament.id.find(tournament_id);
+    const tour = ctx.db.tournament.id.find(tournamentId);
     if (!tour) {
       throw new SenderError("Unknown tournament");
     }
@@ -956,35 +952,35 @@ export const force_end_tournament = spacetimedb.reducer(
     ctx.db.tournament.id.update({
       ...tour,
       status: { tag: "ForceEnded" },
-      ended_at: ctx.timestamp,
+      endedAt: ctx.timestamp,
     });
-    console.info(`Tournament ${tournament_id} stopped by an admin`);
+    console.info(`Tournament ${tournamentId} stopped by an admin`);
   },
 );
 
 // Starts the next match of the finals: an elimination match, or the next
 // game of the final. The admin runs these one at a time, so the finals can
 // be played out on a stage.
-export const start_next_finals_match = spacetimedb.reducer(
-  { tournament_id: t.u64() },
-  (ctx, { tournament_id }) => {
+export const startNextFinalsMatch = spacetimedb.reducer(
+  { tournamentId: t.u64() },
+  (ctx, { tournamentId }) => {
     requireAdmin(ctx);
-    const tour = ctx.db.tournament.id.find(tournament_id);
+    const tour = ctx.db.tournament.id.find(tournamentId);
     if (!tour) {
       throw new SenderError("Unknown tournament");
     }
-    orThrow(startNextFinalsMatch(ctx, tour));
+    orThrow(startFinalsMatch(ctx, tour));
   },
 );
 
 // ---------- ELO ----------
 
 // Resets all BotStats and replays ELO across every ended match in chronological order.
-export const backfill_elo = spacetimedb.reducer((ctx) => {
+export const backfillElo = spacetimedb.reducer((ctx) => {
   requireAdmin(ctx);
 
-  for (const stats of [...ctx.db.bot_stats.iter()]) {
-    ctx.db.bot_stats.bot_id.delete(stats.bot_id);
+  for (const stats of [...ctx.db.botStats.iter()]) {
+    ctx.db.botStats.botId.delete(stats.botId);
   }
 
   for (const m of endedMatchesInOrder(ctx)) {
@@ -994,11 +990,11 @@ export const backfill_elo = spacetimedb.reducer((ctx) => {
 
 // ---------- Auction tick (scheduled) ----------
 
-export const auction_tick = spacetimedb.reducer(
-  { onSchedule: auction_schedule },
-  { job: auction_schedule.rowType },
+export const auctionTick = spacetimedb.reducer(
+  { onSchedule: auctionSchedule },
+  { job: auctionSchedule.rowType },
   (ctx, { job }) => {
     requireScheduler(ctx);
-    closeAuction(ctx, job.match_id);
+    closeAuction(ctx, job.matchId);
   },
 );

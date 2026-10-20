@@ -25,7 +25,7 @@ function rackOf(letters: string): Map<string, number> {
 
 const words = WORDLIST.split("\n").filter((l) => l.length > 0);
 
-test("letter_values_follow_scrabble", () => {
+test("letter values follow scrabble", () => {
   const cases: [string, number][] = [
     ["A", 1],
     ["D", 2],
@@ -43,7 +43,7 @@ test("letter_values_follow_scrabble", () => {
   expect(letterValue("?")).toBe(0);
 });
 
-test("default_bag_is_the_98_tile_scrabble_set", () => {
+test("default bag is the 98 tile scrabble set", () => {
   expect(DEFAULT_BAG.length).toBe(26);
   expect(DEFAULT_BAG.reduce((sum, [, n]) => sum + n, 0)).toBe(98);
   const points = DEFAULT_BAG.reduce(
@@ -53,7 +53,7 @@ test("default_bag_is_the_98_tile_scrabble_set", () => {
   expect(points, "standard Scrabble face value without blanks").toBe(187);
 });
 
-test("length_multiplier_rewards_longer_words", () => {
+test("length multiplier rewards longer words", () => {
   expect(lengthMultiplier(2)).toEqual([1n, 1n]);
   expect(lengthMultiplier(3)).toEqual([1n, 1n]);
   expect(lengthMultiplier(4)).toEqual([3n, 2n]);
@@ -63,7 +63,7 @@ test("length_multiplier_rewards_longer_words", () => {
   expect(lengthMultiplier(15)).toEqual([3n, 1n]);
 });
 
-test("dictionary_accepts_words_in_any_case", () => {
+test("dictionary accepts words in any case", () => {
   expect(isValidWord("AA")).toBe(true);
   expect(isValidWord("cat")).toBe(true);
   expect(isValidWord("QUIZ")).toBe(true);
@@ -72,7 +72,7 @@ test("dictionary_accepts_words_in_any_case", () => {
   expect(isValidWord(words[words.length - 1]!)).toBe(true);
 });
 
-test("dictionary_rejects_nonwords_and_junk", () => {
+test("dictionary rejects nonwords and junk", () => {
   expect(isValidWord("XQZT")).toBe(false);
   expect(isValidWord("A"), "single letters are too short").toBe(false);
   expect(isValidWord("")).toBe(false);
@@ -81,14 +81,14 @@ test("dictionary_rejects_nonwords_and_junk", () => {
   expect(isValidWord("CAFÉ")).toBe(false);
 });
 
-test("wordlist_is_sorted_uppercase_and_unique", () => {
+test("wordlist is sorted uppercase and unique", () => {
   // `isValidWord` binary-searches the raw file, so this must hold.
   const outOfOrder = words.findIndex((w, i) => i > 0 && !(words[i - 1]! < w));
   expect(outOfOrder, `out of order at ${words[outOfOrder]}`).toBe(-1);
   expect(words.filter((w) => !/^[A-Z]+$/.test(w))).toEqual([]);
 });
 
-test("find_best_playable_picks_a_longest_word", () => {
+test("find best playable picks a longest word", () => {
   let word = findBestPlayable(rackOf("TAC"), 3)!;
   expect(word.length).toBe(3);
   expect(["ACT", "CAT"]).toContain(word);
@@ -108,14 +108,14 @@ test("find_best_playable_picks_a_longest_word", () => {
   }
 });
 
-test("find_best_playable_respects_min_len", () => {
+test("find best playable respects min len", () => {
   expect(findBestPlayable(rackOf("AA"), 3)).toBeUndefined();
   expect(findBestPlayable(rackOf("AA"), 2)).toBe("AA");
   expect(findBestPlayable(rackOf("QXZ"), 3)).toBeUndefined();
   expect(findBestPlayable(new Map(), 2)).toBeUndefined();
 });
 
-test("find_best_playable_ignores_non_tiles", () => {
+test("find best playable ignores non tiles", () => {
   const rack = rackOf("CAT");
   rack.set("a", 5);
   rack.set("?", 5);
@@ -123,7 +123,7 @@ test("find_best_playable_ignores_non_tiles", () => {
   expect(word.length).toBe(3);
 });
 
-test("sim_bid_strategies", () => {
+test("sim bid strategies", () => {
   // E is worth 1, Q 10.
   expect(decideBid(HUMAN, "Q", 100n, 0n)).toBe(0n);
   expect(decideBid(CHEAPSKATE, "E", 100n, 0n), "never below 1").toBe(1n);
@@ -133,7 +133,7 @@ test("sim_bid_strategies", () => {
   expect(decideBid(AGGRESSIVE, "Q", 100n, 0n)).toBe(12n);
 });
 
-test("sim_bid_jitter_shifts_the_base_bid", () => {
+test("sim bid jitter shifts the base bid", () => {
   expect(decideBid(VALUE_BIDDER, "Q", 100n, 2n)).toBe(12n);
   expect(decideBid(VALUE_BIDDER, "Q", 100n, -2n)).toBe(8n);
   expect(decideBid(CHEAPSKATE, "E", 100n, -2n), "never below 1").toBe(1n);
@@ -141,7 +141,7 @@ test("sim_bid_jitter_shifts_the_base_bid", () => {
   expect(decideBid(HUMAN, "Q", 100n, 2n)).toBe(0n);
 });
 
-test("sim_bids_are_capped_by_balance", () => {
+test("sim bids are capped by balance", () => {
   expect(decideBid(AGGRESSIVE, "Q", 7n, 0n)).toBe(7n);
   expect(decideBid(VALUE_BIDDER, "Q", 0n, 0n)).toBe(0n);
   expect(decideBid(VALUE_BIDDER, "Q", -5n, 0n), "never negative").toBe(0n);
@@ -149,7 +149,7 @@ test("sim_bids_are_capped_by_balance", () => {
 
 // The TypeScript module computes sim bots' identities itself. They must be
 // the identities the host gives clients with those claims.
-test("identity_from_claims_matches_the_host", () => {
+test("identity from claims matches the host", () => {
   const db = emptyDb();
   const cases: [string, string][] = [
     ["sim", "Cheapo-sim"],

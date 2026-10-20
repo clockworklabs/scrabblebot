@@ -2,7 +2,7 @@
 
 import { expect, test } from "vitest";
 import { STARTING_BALANCE } from "../game";
-import { submit_word } from "../index";
+import { submitWord } from "../index";
 import {
   call,
   failure,
@@ -28,15 +28,15 @@ function setup(db: Test, letters: string): [bigint, bigint] {
 }
 
 function play(db: Test, matchId: bigint, word: string) {
-  call(db, "Ann", (tx) => submit_word(tx, { match_id: matchId, word }));
+  call(db, "Ann", (tx) => submitWord(tx, { matchId: matchId, word }));
 }
 
 function firstPlay(db: Test, bot: bigint) {
-  for (const w of db.db.word_play.play_by_bot.filter(bot)) return w;
+  for (const w of db.db.wordPlay.playByBot.filter(bot)) return w;
   throw new Error("no word played");
 }
 
-test("playing_a_word_scores_it_and_uses_up_the_tiles", () => {
+test("playing a word scores it and uses up the tiles", () => {
   const db = newDb();
   const [m, ann] = setup(db, "CATT");
 
@@ -47,11 +47,11 @@ test("playing_a_word_scores_it_and_uses_up_the_tiles", () => {
   expect([p.score, p.balance]).toEqual([5n, STARTING_BALANCE + 5n]);
   const w = firstPlay(db, ann);
   expect(w.word).toBe("CAT");
-  expect([w.base_score, w.bonus, w.total_reward]).toEqual([5n, 0n, 5n]);
-  expect(w.played_at).toEqual(now());
+  expect([w.baseScore, w.bonus, w.totalReward]).toEqual([5n, 0n, 5n]);
+  expect(w.playedAt).toEqual(now());
 });
 
-test("longer_words_earn_a_multiplier", () => {
+test("longer words earn a multiplier", () => {
   // [word, base, total]
   const cases: [string, bigint, bigint][] = [
     ["QUIZ", 22n, 33n], // 1.5x
@@ -65,7 +65,7 @@ test("longer_words_earn_a_multiplier", () => {
     const [m, ann] = setup(db, word);
     play(db, m, word);
     const w = firstPlay(db, ann);
-    expect([w.base_score, w.total_reward, w.bonus], word).toEqual([
+    expect([w.baseScore, w.totalReward, w.bonus], word).toEqual([
       base,
       total,
       total - base,
@@ -74,7 +74,7 @@ test("longer_words_earn_a_multiplier", () => {
   }
 });
 
-test("scores_accumulate_across_words", () => {
+test("scores accumulate across words", () => {
   const db = newDb();
   const [m, ann] = setup(db, "CATDOG");
   play(db, m, "CAT");
@@ -83,7 +83,7 @@ test("scores_accumulate_across_words", () => {
   expect(rack(db, m, ann)).toEqual([]);
 });
 
-test("words_must_be_spelled_from_the_rack", () => {
+test("words must be spelled from the rack", () => {
   const db = newDb();
   const [m, ann] = setup(db, "CAT");
   for (const word of ["DOG", "TACT", "CATS"]) {
@@ -97,7 +97,7 @@ test("words_must_be_spelled_from_the_rack", () => {
   expect(participant(db, m, ann).score).toBe(0n);
 });
 
-test("words_are_validated", () => {
+test("words are validated", () => {
   const db = newDb();
   const [m] = setup(db, "CATXQZ");
   expect(failure(() => play(db, m, "C"))).toBe(
@@ -109,22 +109,22 @@ test("words_are_validated", () => {
     "'XQZ' is not in the dictionary",
   );
   expect(failure(() => play(db, 9999n, "CAT"))).toBe("Unknown match");
-  expect(db.db.word_play.count()).toBe(0n);
+  expect(db.db.wordPlay.count()).toBe(0n);
 });
 
-test("only_participants_can_play", () => {
+test("only participants can play", () => {
   const db = newDb();
   const [m] = setup(db, "CAT");
   teamWithBot(db, "bob", "Ben");
   const cat = (who: string) =>
     failure(() =>
-      call(db, who, (tx) => submit_word(tx, { match_id: m, word: "CAT" })),
+      call(db, who, (tx) => submitWord(tx, { matchId: m, word: "CAT" })),
     );
   expect(cat("stranger")).toBe("Your identity is not a credential for any bot");
   expect(cat("Ben")).toBe("Not in this match");
 });
 
-test("no_words_after_the_match_ends", () => {
+test("no words after the match ends", () => {
   const db = newDb();
   const [m, ann] = setup(db, "");
   runToEnd(db, m);
@@ -132,7 +132,7 @@ test("no_words_after_the_match_ends", () => {
   expect(failure(() => play(db, m, "CAT"))).toBe("Match not running");
 });
 
-test("racks_are_per_match", () => {
+test("racks are per match", () => {
   const db = newDb();
   const ann = teamWithBot(db, "alice", "Ann");
   const sims = simIds(db);

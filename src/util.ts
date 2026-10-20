@@ -139,7 +139,7 @@ export function matchOutcome(standings: MatchParticipant[]) {
   };
 }
 
-// Mirrors `letter_value` in spacetimedb/src/letters.rs.
+// Mirrors `letterValue` in spacetimedb/src/letters.ts.
 const LETTER_VALUES: Record<string, number> = {
   ...Object.fromEntries([..."AEIOULNSTR"].map((c) => [c, 1])),
   ...Object.fromEntries([..."DG"].map((c) => [c, 2])),

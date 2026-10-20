@@ -292,7 +292,7 @@ export function pow(x: number, y: number): number {
     log(x) by x-x^2/2+x^3/3-x^4/4 */
     const t = ax - 1.0; /* t has 20 trailing zeros */
     const w = t * t * (0.5 - t * (0.3333333333333333333333 - t * 0.25));
-    const u = IVLN2_H * t; /* ivln2_h has 21 sig. bits */
+    const u = IVLN2_H * t; /* IVLN2_H has 21 sig. bits */
     const v = t * IVLN2_L - w * IVLN2;
     t1 = withLowWord(u + v, 0);
     t2 = v - (t1 - u);
@@ -325,50 +325,50 @@ export function pow(x: number, y: number): number {
     }
     ax = withHighWord(ax, ix);
 
-    /* compute ss = s_h+s_l = (x-1)/(x+1) or (x-1.5)/(x+1.5) */
+    /* compute ss = sH+sL = (x-1)/(x+1) or (x-1.5)/(x+1.5) */
     let u = ax - BP[k]!; /* bp[0]=1.0, bp[1]=1.5 */
     let v = 1.0 / (ax + BP[k]!);
     const ss = u * v;
-    const s_h = withLowWord(ss, 0);
+    const sH = withLowWord(ss, 0);
 
-    /* t_h=ax+bp[k] High */
-    let t_h = withHighWord(
+    /* tH=ax+bp[k] High */
+    let tH = withHighWord(
       0.0,
       (((ix >>> 1) | 0x20000000) + 0x00080000 + (k << 18)) >>> 0,
     );
-    let t_l = ax - (t_h - BP[k]!);
-    const s_l = v * (u - s_h * t_h - s_h * t_l);
+    let tL = ax - (tH - BP[k]!);
+    const sL = v * (u - sH * tH - sH * tL);
 
     /* compute log(ax) */
     let s2 = ss * ss;
     let r =
       s2 * s2 * (L1 + s2 * (L2 + s2 * (L3 + s2 * (L4 + s2 * (L5 + s2 * L6)))));
-    r += s_l * (s_h + ss);
-    s2 = s_h * s_h;
-    t_h = withLowWord(3.0 + s2 + r, 0);
-    t_l = r - (t_h - 3.0 - s2);
+    r += sL * (sH + ss);
+    s2 = sH * sH;
+    tH = withLowWord(3.0 + s2 + r, 0);
+    tL = r - (tH - 3.0 - s2);
 
     /* u+v = ss*(1+...) */
-    u = s_h * t_h;
-    v = s_l * t_h + t_l * ss;
+    u = sH * tH;
+    v = sL * tH + tL * ss;
 
     /* 2/(3log2)*(ss+...) */
-    const p_h = withLowWord(u + v, 0);
-    const p_l = v - (p_h - u);
-    const z_h = CP_H * p_h; /* cp_h+cp_l = 2/(3*log2) */
-    const z_l = CP_L * p_h + p_l * CP + DP_L[k]!;
+    const pH = withLowWord(u + v, 0);
+    const pL = v - (pH - u);
+    const zH = CP_H * pH; /* CP_H+CP_L = 2/(3*log2) */
+    const zL = CP_L * pH + pL * CP + DP_L[k]!;
 
-    /* log2(ax) = (ss+..)*2/(3*log2) = n + dp_h + z_h + z_l */
+    /* log2(ax) = (ss+..)*2/(3*log2) = n + DP_H + zH + zL */
     const t = n;
-    t1 = withLowWord(z_h + z_l + DP_H[k]! + t, 0);
-    t2 = z_l - (t1 - t - DP_H[k]! - z_h);
+    t1 = withLowWord(zH + zL + DP_H[k]! + t, 0);
+    t2 = zL - (t1 - t - DP_H[k]! - zH);
   }
 
   /* split up y into y1+y2 and compute (y1+y2)*(t1+t2) */
   const y1 = withLowWord(y, 0);
-  const p_l = (y - y1) * t1 + y * t2;
-  let p_h = y1 * t1;
-  let z = p_l + p_h;
+  const pL = (y - y1) * t1 + y * t2;
+  let pH = y1 * t1;
+  let z = pL + pH;
   j = highWord(z);
   let i = lowWord(z) | 0;
 
@@ -378,7 +378,7 @@ export function pow(x: number, y: number): number {
       /* if z > 1024 */
       return s * HUGE * HUGE; /* overflow */
     }
-    if (p_l + OVT > z - p_h) {
+    if (pL + OVT > z - pH) {
       return s * HUGE * HUGE; /* overflow */
     }
   } else if ((j & 0x7fffffff) >= 0x4090cc00) {
@@ -387,12 +387,12 @@ export function pow(x: number, y: number): number {
       /* z < -1075 */
       return s * TINY * TINY; /* underflow */
     }
-    if (p_l <= z - p_h) {
+    if (pL <= z - pH) {
       return s * TINY * TINY; /* underflow */
     }
   }
 
-  /* compute 2**(p_h+p_l) */
+  /* compute 2**(pH+pL) */
   i = j & 0x7fffffff;
   k = (i >> 20) - 0x3ff;
   let n = 0;
@@ -406,12 +406,12 @@ export function pow(x: number, y: number): number {
     if (j < 0) {
       n = -n;
     }
-    p_h -= t;
+    pH -= t;
   }
 
-  const t = withLowWord(p_l + p_h, 0);
+  const t = withLowWord(pL + pH, 0);
   const u = t * LG2_H;
-  const v = (p_l - (t - p_h)) * LG2 + t * LG2_L;
+  const v = (pL - (t - pH)) * LG2 + t * LG2_L;
   z = u + v;
   const w = v - (z - u);
   const tt = z * z;

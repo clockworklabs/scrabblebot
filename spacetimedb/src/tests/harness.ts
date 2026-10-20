@@ -20,12 +20,12 @@ import { AUCTION_DURATION_MS, isErr, startMatchWith, type Ctx } from "../game";
 import { identityFromClaims } from "../identity";
 import * as moduleExports from "../index";
 import {
-  auction_tick,
-  claim_credential,
-  create_team,
+  auctionTick,
+  claimCredential,
+  createTeam,
   init,
-  lobby_timeout_tick,
-  mint_credential_nonce,
+  lobbyTimeoutTick,
+  mintCredentialNonce,
 } from "../index";
 import spacetimedb, {
   type Auction,
@@ -114,9 +114,9 @@ export function failure(f: () => unknown): string {
 /** Make `subject` an admin by writing the row directly. */
 export function makeAdmin(test: Test, subject: string) {
   test.db.admin.insert({
-    human_identity: identity(subject),
-    added_at: now(),
-    added_by: undefined,
+    humanIdentity: identity(subject),
+    addedAt: now(),
+    addedBy: undefined,
   });
 }
 
@@ -130,11 +130,11 @@ export function teamWithBot(
   botName: string,
 ): bigint {
   call(test, owner, (tx) =>
-    create_team(tx, { team_name: `Team ${botName}`, bot_name: botName }),
+    createTeam(tx, { teamName: `Team ${botName}`, botName: botName }),
   );
-  call(test, owner, (tx) => mint_credential_nonce(tx, {}));
+  call(test, owner, (tx) => mintCredentialNonce(tx, {}));
   const code = noncesFor(test, owner).pop()!.code;
-  call(test, botName, (tx) => claim_credential(tx, { code }));
+  call(test, botName, (tx) => claimCredential(tx, { code }));
   return botNamed(test, botName).id;
 }
 
@@ -150,7 +150,7 @@ export function byBigint(a: bigint, b: bigint): number {
 
 export function noncesFor(test: Test, subject: string): CredentialNonce[] {
   return [
-    ...test.db.credential_nonce.nonce_by_creator.filter(identity(subject)),
+    ...test.db.credentialNonce.nonceByCreator.filter(identity(subject)),
   ].sort((a, b) => byBigint(a.id, b.id));
 }
 
@@ -171,11 +171,11 @@ export const VICKREY: AuctionType = { tag: "Vickrey" };
 export const FIRST_PRICE: AuctionType = { tag: "FirstPrice" };
 
 export function getMatch(test: Test, matchId: bigint): Match {
-  return test.db.match_state.id.find(matchId)!;
+  return test.db.matchState.id.find(matchId)!;
 }
 
 export function currentAuction(test: Test, matchId: bigint): Auction {
-  const id = getMatch(test, matchId).current_auction_id!;
+  const id = getMatch(test, matchId).currentAuctionId!;
   return test.db.auction.id.find(id)!;
 }
 
@@ -184,8 +184,8 @@ export function participant(
   matchId: bigint,
   botId: bigint,
 ): MatchParticipant {
-  return [...test.db.match_participant.mp_by_match.filter(matchId)].find(
-    (p) => p.bot_id === botId,
+  return [...test.db.matchParticipant.mpByMatch.filter(matchId)].find(
+    (p) => p.botId === botId,
   )!;
 }
 
@@ -195,7 +195,7 @@ export function rack(
   matchId: bigint,
   botId: bigint,
 ): [string, number][] {
-  return [...test.db.holding.holding_by_match_bot.filter([matchId, botId])]
+  return [...test.db.holding.holdingByMatchBot.filter([matchId, botId])]
     .map((h): [string, number] => [h.letter, h.count])
     .sort(([a, an], [b, bn]) => (a < b ? -1 : a > b ? 1 : an - bn));
 }
@@ -208,7 +208,7 @@ export function setRack(
   letters: string,
 ) {
   const old = [
-    ...test.db.holding.holding_by_match_bot.filter([matchId, botId]),
+    ...test.db.holding.holdingByMatchBot.filter([matchId, botId]),
   ].map((h) => h.id);
   for (const id of old) {
     test.db.holding.id.delete(id);
@@ -220,8 +220,8 @@ export function setRack(
   for (const [c, count] of counts) {
     test.db.holding.insert({
       id: 0n,
-      match_id: matchId,
-      bot_id: botId,
+      matchId: matchId,
+      botId: botId,
       letter: c,
       count,
     });
@@ -231,29 +231,29 @@ export function setRack(
 /** The schedule row that closes `matchId`'s current auction. */
 export function auctionJob(matchId: bigint): AuctionSchedule {
   return {
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(NOW_MICROS),
-    match_id: matchId,
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(NOW_MICROS),
+    matchId: matchId,
   };
 }
 
 /** The schedule row that times out `lobbyId`. */
 export function lobbyJob(lobbyId: bigint): LobbyTimeoutSchedule {
   return {
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(NOW_MICROS),
-    lobby_id: lobbyId,
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(NOW_MICROS),
+    lobbyId: lobbyId,
   };
 }
 
 /** Close the current auction as the scheduler would. */
 export function tick(test: Test, matchId: bigint) {
-  internal(test, (tx) => auction_tick(tx, { job: auctionJob(matchId) }));
+  internal(test, (tx) => auctionTick(tx, { job: auctionJob(matchId) }));
 }
 
 /** Time out a lobby as the scheduler would. */
 export function lobbyTimeout(test: Test, lobbyId: bigint) {
-  internal(test, (tx) => lobby_timeout_tick(tx, { job: lobbyJob(lobbyId) }));
+  internal(test, (tx) => lobbyTimeoutTick(tx, { job: lobbyJob(lobbyId) }));
 }
 
 /** Tick the match until the bag runs out. Returns the number of ticks. */
@@ -270,7 +270,7 @@ export function runToEnd(test: Test, matchId: bigint): number {
 
 export function simIds(test: Test): bigint[] {
   return [...test.db.bot.iter()]
-    .filter((b) => b.is_simulated)
+    .filter((b) => b.isSimulated)
     .map((b) => b.id)
     .sort(byBigint);
 }

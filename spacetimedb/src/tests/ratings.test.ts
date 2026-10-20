@@ -3,7 +3,7 @@
 import { expect, test } from "vitest";
 import { updateEloAtMatchEnd } from "../game";
 import { eloRatingPeriod, wengLinRatingPeriod, type Outcome } from "../ratings";
-import { backfill_elo, backfill_top_bid_archive } from "../index";
+import { backfillElo, backfillTopBidArchive } from "../index";
 import type { BotStats } from "../schema";
 import {
   byBigint,
@@ -32,23 +32,23 @@ function rate(db: Test, scores: [bigint, bigint][]): bigint {
   const m = startMatch(db, VICKREY, bots);
   for (const [bot, score] of scores) {
     const p = participant(db, m, bot);
-    db.db.match_participant.id.update({ ...p, score });
+    db.db.matchParticipant.id.update({ ...p, score });
   }
   const state = getMatch(db, m);
-  db.db.match_state.id.update({
+  db.db.matchState.id.update({
     ...state,
     status: { tag: "Ended" },
-    ended_at: db.clock.now(),
+    endedAt: db.clock.now(),
   });
   internal(db, (tx) => updateEloAtMatchEnd(tx, m));
   return m;
 }
 
 function stats(db: Test, bot: bigint): BotStats {
-  return db.db.bot_stats.bot_id.find(bot)!;
+  return db.db.botStats.botId.find(bot)!;
 }
 
-test("a_win_moves_ratings_apart", () => {
+test("a win moves ratings apart", () => {
   const db = newDb();
   const [a, b] = simIds(db) as [bigint, bigint];
   rate(db, [
@@ -60,16 +60,16 @@ test("a_win_moves_ratings_apart", () => {
   expect([w.rating, l.rating], "K=32, equal starting ratings").toEqual([
     1016, 984,
   ]);
-  expect(w.openskill_mu > 25.0 && l.openskill_mu < 25.0).toBe(true);
-  expect(w.openskill_sigma < 25.0 / 3.0 && l.openskill_sigma < 25.0 / 3.0).toBe(
+  expect(w.openskillMu > 25.0 && l.openskillMu < 25.0).toBe(true);
+  expect(w.openskillSigma < 25.0 / 3.0 && l.openskillSigma < 25.0 / 3.0).toBe(
     true,
   );
-  expect([w.matches_played, w.wins, w.total_score]).toEqual([1, 1, 30n]);
-  expect([l.matches_played, l.wins, l.total_score]).toEqual([1, 0, 10n]);
-  expect(w.last_played).toEqual(now());
+  expect([w.matchesPlayed, w.wins, w.totalScore]).toEqual([1, 1, 30n]);
+  expect([l.matchesPlayed, l.wins, l.totalScore]).toEqual([1, 0, 10n]);
+  expect(w.lastPlayed).toEqual(now());
 });
 
-test("ratings_are_nearly_zero_sum_and_ordered_by_placing", () => {
+test("ratings are nearly zero sum and ordered by placing", () => {
   const db = newDb();
   const s = simIds(db);
   rate(db, [
@@ -87,7 +87,7 @@ test("ratings_are_nearly_zero_sum_and_ordered_by_placing", () => {
   expect(Math.abs(drift), `drift ${drift}`).toBeLessThanOrEqual(2);
 });
 
-test("a_draw_leaves_equal_ratings_unchanged", () => {
+test("a draw leaves equal ratings unchanged", () => {
   const db = newDb();
   const [a, b] = simIds(db) as [bigint, bigint];
   rate(db, [
@@ -95,10 +95,10 @@ test("a_draw_leaves_equal_ratings_unchanged", () => {
     [b, 20n],
   ]);
   expect([stats(db, a).rating, stats(db, b).rating]).toEqual([1000, 1000]);
-  expect(Math.abs(stats(db, a).openskill_mu - 25.0)).toBeLessThan(1e-9);
+  expect(Math.abs(stats(db, a).openskillMu - 25.0)).toBeLessThan(1e-9);
 });
 
-test("everyone_tied_for_first_gets_a_win", () => {
+test("everyone tied for first gets a win", () => {
   const db = newDb();
   const s = simIds(db);
   rate(db, [
@@ -110,7 +110,7 @@ test("everyone_tied_for_first_gets_a_win", () => {
   expect(wins).toEqual([1, 1, 0]);
 });
 
-test("stats_accumulate_over_matches", () => {
+test("stats accumulate over matches", () => {
   const db = newDb();
   const [a, b] = simIds(db) as [bigint, bigint];
   rate(db, [
@@ -123,21 +123,21 @@ test("stats_accumulate_over_matches", () => {
   ]);
 
   const s = stats(db, a);
-  expect([s.matches_played, s.wins, s.total_score]).toEqual([2, 1, 35n]);
+  expect([s.matchesPlayed, s.wins, s.totalScore]).toEqual([2, 1, 35n]);
   expect(
     s.rating,
     "losing to a lower-rated bot costs more than the win earned",
   ).toBeLessThan(1000);
 });
 
-test("a_solo_match_is_not_rated", () => {
+test("a solo match is not rated", () => {
   const db = newDb();
   const a = simIds(db)[0]!;
   rate(db, [[a, 30n]]);
-  expect(db.db.bot_stats.bot_id.find(a)).toBeNull();
+  expect(db.db.botStats.botId.find(a)).toBeNull();
 });
 
-test("finishing_a_real_match_rates_everyone_in_it", () => {
+test("finishing a real match rates everyone in it", () => {
   const db = newDb();
   const sims = simIds(db);
   const m = startMatch(db, VICKREY, sims);
@@ -149,13 +149,13 @@ test("finishing_a_real_match_rates_everyone_in_it", () => {
   for (const bot of sims) {
     const s = stats(db, bot);
     const score = participant(db, m, bot).score;
-    expect(s.matches_played).toBe(1);
-    expect(s.total_score).toBe(score);
+    expect(s.matchesPlayed).toBe(1);
+    expect(s.totalScore).toBe(score);
     expect(s.wins, `bot ${bot}`).toBe(score === top ? 1 : 0);
   }
 });
 
-test("backfill_elo_replays_history_to_the_same_result", () => {
+test("backfill elo replays history to the same result", () => {
   const db = newDb();
   makeAdmin(db, "alice");
   const sims = simIds(db);
@@ -163,40 +163,40 @@ test("backfill_elo_replays_history_to_the_same_result", () => {
     const m = startMatch(db, VICKREY, roster);
     runToEnd(db, m);
   }
-  const live = [...db.db.bot_stats.iter()].sort((a, b) =>
-    byBigint(a.bot_id, b.bot_id),
+  const live = [...db.db.botStats.iter()].sort((a, b) =>
+    byBigint(a.botId, b.botId),
   );
 
   // Corrupt the stats, then rebuild them.
   for (const s of live) {
-    db.db.bot_stats.bot_id.update({ ...s, rating: 1, wins: 99 });
+    db.db.botStats.botId.update({ ...s, rating: 1, wins: 99 });
   }
-  call(db, "alice", (tx) => backfill_elo(tx, {}));
+  call(db, "alice", (tx) => backfillElo(tx, {}));
 
-  const rebuilt = [...db.db.bot_stats.iter()].sort((a, b) =>
-    byBigint(a.bot_id, b.bot_id),
+  const rebuilt = [...db.db.botStats.iter()].sort((a, b) =>
+    byBigint(a.botId, b.botId),
   );
   const key = (s: BotStats) => [
-    s.bot_id,
+    s.botId,
     s.rating,
-    s.matches_played,
+    s.matchesPlayed,
     s.wins,
-    s.total_score,
-    s.openskill_mu,
-    s.openskill_sigma,
+    s.totalScore,
+    s.openskillMu,
+    s.openskillSigma,
   ];
   // `toEqual` compares the floats exactly, like Rust's `to_bits`.
   expect(rebuilt.map(key)).toEqual(live.map(key));
 });
 
-test("backfill_top_bid_archive_moves_ended_matches_in_chunks", () => {
+test("backfill top bid archive moves ended matches in chunks", () => {
   const db = newDb();
   makeAdmin(db, "alice");
   const ann = teamWithBot(db, "alice", "Ann");
   const ended = startMatch(db, VICKREY, [ann, simIds(db)[0]!]);
   const running = startMatch(db, VICKREY, [ann, simIds(db)[1]!]);
   const state = getMatch(db, ended);
-  db.db.match_state.id.update({ ...state, status: { tag: "Ended" } });
+  db.db.matchState.id.update({ ...state, status: { tag: "Ended" } });
   // Legacy rows from before matches archived themselves.
   const legacy: [bigint, bigint][] = [
     [101n, ended],
@@ -204,32 +204,32 @@ test("backfill_top_bid_archive_moves_ended_matches_in_chunks", () => {
     [103n, ended],
     [201n, running],
   ];
-  for (const [auction_id, match_id] of legacy) {
-    db.db.auction_top_bid.insert({
-      auction_id,
-      match_id,
-      top_bid: 7n,
+  for (const [auctionId, matchId] of legacy) {
+    db.db.auctionTopBid.insert({
+      auctionId,
+      matchId,
+      topBid: 7n,
       visible: true,
     });
   }
 
-  const backfill = (max_rows: number) =>
-    call(db, "alice", (tx) => backfill_top_bid_archive(tx, { max_rows }));
+  const backfill = (maxRows: number) =>
+    call(db, "alice", (tx) => backfillTopBidArchive(tx, { maxRows }));
   expect(failure(() => backfill(0))).toBe("max_rows must be > 0");
   backfill(2);
-  expect(db.db.auction_top_bid_archive.count()).toBe(2n);
+  expect(db.db.auctionTopBidArchive.count()).toBe(2n);
   backfill(2);
   backfill(2);
 
-  expect(db.db.auction_top_bid_archive.count()).toBe(3n);
-  const left = [...db.db.auction_top_bid.iter()].map((t) => t.auction_id);
+  expect(db.db.auctionTopBidArchive.count()).toBe(3n);
+  const left = [...db.db.auctionTopBid.iter()].map((t) => t.auctionId);
   expect(left, "running matches stay private").toEqual([201n]);
 });
 
 // Outputs of the Rust `skillratings` 0.29.2 crate, compiled to WebAssembly
 // as the Rust module was, for the same inputs. The TypeScript port must
 // reproduce them exactly, to the last bit.
-test("ratings_match_the_rust_skillratings_crate", () => {
+test("ratings match the rust skillratings crate", () => {
   type Opponent = [elo: number, mu: number, sigma: number, outcome: Outcome];
   const cases: {
     player: [elo: number, mu: number, sigma: number];

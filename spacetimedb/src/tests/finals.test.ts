@@ -3,11 +3,11 @@
 
 import { expect, test } from "vitest";
 import {
-  create_tournament,
-  force_end_tournament,
-  register_sim_bots,
-  start_next_finals_match,
-  start_tournament,
+  createTournament,
+  forceEndTournament,
+  registerSimBots,
+  startNextFinalsMatch,
+  startTournament,
 } from "../index";
 import type { TournamentEntry, TournamentPhase } from "../schema";
 import { onTournamentMatchEnded } from "../tournament";
@@ -27,45 +27,45 @@ function start(rounds: number, topCut: number, size = 3): [Test, bigint] {
   const db = newDb();
   makeAdmin(db, "admin");
   call(db, "admin", (tx) =>
-    create_tournament(tx, {
-      swiss_rounds_total: rounds,
-      top_cut: topCut,
-      match_size: size,
-      auction_type: { tag: "Vickrey" },
+    createTournament(tx, {
+      swissRoundsTotal: rounds,
+      topCut: topCut,
+      matchSize: size,
+      auctionType: { tag: "Vickrey" },
     }),
   );
   const t = [...db.db.tournament.iter()][0]!.id;
-  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
-  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => registerSimBots(tx, { tournamentId: t }));
+  call(db, "admin", (tx) => startTournament(tx, { tournamentId: t }));
   return [db, t];
 }
 
 const startNext = (db: Test, t: bigint, who = "admin") =>
-  call(db, who, (tx) => start_next_finals_match(tx, { tournament_id: t }));
+  call(db, who, (tx) => startNextFinalsMatch(tx, { tournamentId: t }));
 
 function matchesIn(db: Test, t: bigint, phase: TournamentPhase["tag"]) {
-  return [...db.db.tournament_match.tm_by_tournament.filter(t)]
+  return [...db.db.tournamentMatch.tmByTournament.filter(t)]
     .filter((m) => m.phase.tag === phase)
     .sort((a, b) => byBigint(a.id, b.id));
 }
 
 /** The bots at a match, lowest id first. */
 function seatedAt(db: Test, matchId: bigint): bigint[] {
-  return [...db.db.match_participant.mp_by_match.filter(matchId)]
-    .map((p) => p.bot_id)
+  return [...db.db.matchParticipant.mpByMatch.filter(matchId)]
+    .map((p) => p.botId)
     .sort(byBigint);
 }
 
 /** End a match with exactly these scores, as its last auction would. */
 function finish(db: Test, matchId: bigint, scores: Map<bigint, bigint>) {
-  for (const p of [...db.db.match_participant.mp_by_match.filter(matchId)]) {
-    db.db.match_participant.id.update({ ...p, score: scores.get(p.bot_id)! });
+  for (const p of [...db.db.matchParticipant.mpByMatch.filter(matchId)]) {
+    db.db.matchParticipant.id.update({ ...p, score: scores.get(p.botId)! });
   }
-  const m = db.db.match_state.id.find(matchId)!;
-  db.db.match_state.id.update({
+  const m = db.db.matchState.id.find(matchId)!;
+  db.db.matchState.id.update({
     ...m,
     status: { tag: "Ended" },
-    ended_at: db.clock.now(),
+    endedAt: db.clock.now(),
   });
   internal(db, (tx) => onTournamentMatchEnded(tx, matchId));
 }
@@ -77,43 +77,43 @@ function finishInOrder(db: Test, matchId: bigint, scores: bigint[]) {
 }
 
 function entry(db: Test, t: bigint, bot: bigint): TournamentEntry {
-  return [...db.db.tournament_entry.te_by_tournament.filter(t)].find(
-    (e) => e.bot_id === bot,
+  return [...db.db.tournamentEntry.teByTournament.filter(t)].find(
+    (e) => e.botId === bot,
   )!;
 }
 
 function alive(db: Test, t: bigint): bigint[] {
-  return [...db.db.tournament_entry.te_by_tournament.filter(t)]
+  return [...db.db.tournamentEntry.teByTournament.filter(t)]
     .filter((e) => !e.eliminated)
-    .map((e) => e.bot_id)
+    .map((e) => e.botId)
     .sort(byBigint);
 }
 
 const status = (db: Test, t: bigint) => db.db.tournament.id.find(t)!.status.tag;
 
-test("bots_on_the_same_score_share_a_swiss_place", () => {
+test("bots on the same score share a swiss place", () => {
   const [db, t] = start(2, 2);
   const [table] = matchesIn(db, t, "Swiss");
-  const [a, b, c] = seatedAt(db, table!.match_id);
+  const [a, b, c] = seatedAt(db, table!.matchId);
 
-  finishInOrder(db, table!.match_id, [10n, 10n, 5n]);
+  finishInOrder(db, table!.matchId, [10n, 10n, 5n]);
 
-  expect([a, b, c].map((bot) => entry(db, t, bot!).swiss_points)).toEqual([
+  expect([a, b, c].map((bot) => entry(db, t, bot!).swissPoints)).toEqual([
     3, 3, 1,
   ]);
-  expect(entry(db, t, a!).total_score).toBe(10n);
+  expect(entry(db, t, a!).totalScore).toBe(10n);
 });
 
-test("the_cut_breaks_ties_by_total_score_then_bot_id", () => {
+test("the cut breaks ties by total score then bot id", () => {
   // Two tables of three; the runners-up tie on points, and the top 3 go
   // through, so the cut has to choose between them.
   const play = (secondAtB: bigint) => {
     const [db, t] = start(1, 3);
     const [tableA, tableB] = matchesIn(db, t, "Swiss");
-    const a = seatedAt(db, tableA!.match_id);
-    const b = seatedAt(db, tableB!.match_id);
-    finishInOrder(db, tableA!.match_id, [30n, 20n, 10n]);
-    finishInOrder(db, tableB!.match_id, [30n, secondAtB, 10n]);
+    const a = seatedAt(db, tableA!.matchId);
+    const b = seatedAt(db, tableB!.matchId);
+    finishInOrder(db, tableA!.matchId, [30n, 20n, 10n]);
+    finishInOrder(db, tableB!.matchId, [30n, secondAtB, 10n]);
     return { db, t, a, b };
   };
 
@@ -128,22 +128,22 @@ test("the_cut_breaks_ties_by_total_score_then_bot_id", () => {
   expect(alive(db, t)).toEqual([a[0]!, b[0]!, b[1]!].sort(byBigint));
 });
 
-test("a_cut_to_two_goes_straight_to_the_final", () => {
+test("a cut to two goes straight to the final", () => {
   const [db, t] = start(1, 2);
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   expect(status(db, t)).toBe("Final");
   expect(alive(db, t).length).toBe(2);
 });
 
-test("finals_matches_wait_for_the_admin", () => {
+test("finals matches wait for the admin", () => {
   const [db, t] = start(1, 4);
   expect(failure(() => startNext(db, t))).toBe(
     "The tournament isn't in its finals",
   );
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   expect(matchesIn(db, t, "Bracket")).toEqual([]);
 
@@ -155,14 +155,14 @@ test("finals_matches_wait_for_the_admin", () => {
   );
 });
 
-test("an_elimination_match_knocks_out_last_place_with_tiebreaks", () => {
+test("an elimination match knocks out last place with tiebreaks", () => {
   const [db, t] = start(1, 4);
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   startNext(db, t);
   const [match] = matchesIn(db, t, "Bracket");
-  const [w, x, y, z] = seatedAt(db, match!.match_id) as [
+  const [w, x, y, z] = seatedAt(db, match!.matchId) as [
     bigint,
     bigint,
     bigint,
@@ -178,12 +178,12 @@ test("an_elimination_match_knocks_out_last_place_with_tiebreaks", () => {
   ]);
   for (const bot of [w, x, y, z]) {
     const e = entry(db, t, bot);
-    db.db.tournament_entry.id.update({ ...e, total_score: totals.get(bot)! });
+    db.db.tournamentEntry.id.update({ ...e, totalScore: totals.get(bot)! });
   }
 
   finish(
     db,
-    match!.match_id,
+    match!.matchId,
     new Map([
       [w, 30n],
       [x, 10n],
@@ -193,14 +193,14 @@ test("an_elimination_match_knocks_out_last_place_with_tiebreaks", () => {
   );
 
   expect(alive(db, t)).toEqual([w, x, y]);
-  expect(entry(db, t, z).final_finish_position).toBe(4);
+  expect(entry(db, t, z).finalFinishPosition).toBe(4);
   expect(status(db, t), "three left, so another elimination").toBe("Bracket");
 });
 
-test("the_final_goes_to_the_best_score_over_its_games", () => {
+test("the final goes to the best score over its games", () => {
   const [db, t] = start(1, 2);
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   const [a, b] = alive(db, t) as [bigint, bigint];
   // b wins two of the three games, but a scores more over all three.
@@ -216,7 +216,7 @@ test("the_final_goes_to_the_best_score_over_its_games", () => {
     expect(game.round).toBe(i + 1);
     finish(
       db,
-      game.match_id,
+      game.matchId,
       new Map([
         [a, sa],
         [b, sb],
@@ -226,45 +226,45 @@ test("the_final_goes_to_the_best_score_over_its_games", () => {
 
   const tour = db.db.tournament.id.find(t)!;
   expect(tour.status.tag).toBe("Ended");
-  expect(tour.winner_bot_id).toBe(a);
-  expect(tour.ended_at).toEqual(db.clock.now());
-  expect(entry(db, t, a).final_finish_position).toBe(1);
-  expect(entry(db, t, b).final_finish_position).toBe(2);
+  expect(tour.winnerBotId).toBe(a);
+  expect(tour.endedAt).toEqual(db.clock.now());
+  expect(entry(db, t, a).finalFinishPosition).toBe(1);
+  expect(entry(db, t, b).finalFinishPosition).toBe(2);
   expect(alive(db, t)).toEqual([a]);
   expect(failure(() => startNext(db, t))).toBe(
     "The tournament isn't in its finals",
   );
 });
 
-test("a_drawn_final_goes_to_total_score", () => {
+test("a drawn final goes to total score", () => {
   const [db, t] = start(1, 2);
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   const [a, b] = alive(db, t) as [bigint, bigint];
   const ea = entry(db, t, a);
-  db.db.tournament_entry.id.update({ ...ea, total_score: 0n });
+  db.db.tournamentEntry.id.update({ ...ea, totalScore: 0n });
   const eb = entry(db, t, b);
-  db.db.tournament_entry.id.update({ ...eb, total_score: 99n });
+  db.db.tournamentEntry.id.update({ ...eb, totalScore: 99n });
   for (let i = 0; i < 3; i++) {
     startNext(db, t);
     finish(
       db,
-      matchesIn(db, t, "Final")[i]!.match_id,
+      matchesIn(db, t, "Final")[i]!.matchId,
       new Map([
         [a, 10n],
         [b, 10n],
       ]),
     );
   }
-  expect(db.db.tournament.id.find(t)!.winner_bot_id).toBe(b);
+  expect(db.db.tournament.id.find(t)!.winnerBotId).toBe(b);
 });
 
-test("a_finished_tournament_has_placings_for_its_finalists", () => {
+test("a finished tournament has placings for its finalists", () => {
   const [db, t] = start(1, 4);
   for (let i = 0; i < 50 && status(db, t) !== "Ended"; i++) {
     const running = [
-      ...db.db.match_state.match_by_status.filter({
+      ...db.db.matchState.matchByStatus.filter({
         tag: "Running",
       }),
     ];
@@ -278,16 +278,16 @@ test("a_finished_tournament_has_placings_for_its_finalists", () => {
 
   const tour = db.db.tournament.id.find(t)!;
   expect(tour.status.tag).toBe("Ended");
-  const es = [...db.db.tournament_entry.te_by_tournament.filter(t)];
+  const es = [...db.db.tournamentEntry.teByTournament.filter(t)];
   const placed = es
-    .filter((e) => e.final_finish_position !== undefined)
-    .sort((a, b) => a.final_finish_position! - b.final_finish_position!);
-  expect(placed.map((e) => e.final_finish_position)).toEqual([1, 2, 3, 4]);
-  expect(placed[0]!.bot_id).toBe(tour.winner_bot_id);
+    .filter((e) => e.finalFinishPosition !== undefined)
+    .sort((a, b) => a.finalFinishPosition! - b.finalFinishPosition!);
+  expect(placed.map((e) => e.finalFinishPosition)).toEqual([1, 2, 3, 4]);
+  expect(placed[0]!.botId).toBe(tour.winnerBotId);
   expect(placed[0]!.eliminated).toBe(false);
   expect(placed.slice(1).every((e) => e.eliminated)).toBe(true);
   expect(
-    es.filter((e) => e.final_finish_position === undefined).length,
+    es.filter((e) => e.finalFinishPosition === undefined).length,
     "the two cut after the Swiss rounds have no placing",
   ).toBe(2);
 });
@@ -295,9 +295,9 @@ test("a_finished_tournament_has_placings_for_its_finalists", () => {
 // ---------- Stopping a tournament ----------
 
 const forceEnd = (db: Test, t: bigint, who = "admin") =>
-  call(db, who, (tx) => force_end_tournament(tx, { tournament_id: t }));
+  call(db, who, (tx) => forceEndTournament(tx, { tournamentId: t }));
 
-test("force_ending_stops_a_tournament_where_it_is", () => {
+test("force ending stops a tournament where it is", () => {
   const [db, t] = start(2, 4);
   const round1 = matchesIn(db, t, "Swiss");
 
@@ -305,39 +305,39 @@ test("force_ending_stops_a_tournament_where_it_is", () => {
 
   const tour = db.db.tournament.id.find(t)!;
   expect(tour.status.tag).toBe("ForceEnded");
-  expect(tour.ended_at).toEqual(db.clock.now());
-  expect(tour.winner_bot_id).toBeUndefined();
+  expect(tour.endedAt).toEqual(db.clock.now());
+  expect(tour.winnerBotId).toBeUndefined();
   // The matches it had going play out, but don't move it on.
   for (const m of round1) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   expect(matchesIn(db, t, "Swiss").length, "no second round").toBe(
     round1.length,
   );
   expect(status(db, t)).toBe("ForceEnded");
   expect(
-    [...db.db.tournament_entry.te_by_tournament.filter(t)].every(
-      (e) => e.swiss_points === 0,
+    [...db.db.tournamentEntry.teByTournament.filter(t)].every(
+      (e) => e.swissPoints === 0,
     ),
     "results after the stop don't count",
   ).toBe(true);
 });
 
-test("a_force_ended_tournament_ignores_its_finals_match", () => {
+test("a force ended tournament ignores its finals match", () => {
   const [db, t] = start(1, 4);
   for (const m of matchesIn(db, t, "Swiss")) {
-    runToEnd(db, m.match_id);
+    runToEnd(db, m.matchId);
   }
   startNext(db, t);
   const before = alive(db, t);
 
   forceEnd(db, t);
-  runToEnd(db, matchesIn(db, t, "Bracket")[0]!.match_id);
+  runToEnd(db, matchesIn(db, t, "Bracket")[0]!.matchId);
 
   expect(alive(db, t)).toEqual(before);
   expect(
-    [...db.db.tournament_entry.te_by_tournament.filter(t)].some(
-      (e) => e.final_finish_position !== undefined,
+    [...db.db.tournamentEntry.teByTournament.filter(t)].some(
+      (e) => e.finalFinishPosition !== undefined,
     ),
   ).toBe(false);
   expect(failure(() => startNext(db, t))).toBe(
@@ -345,23 +345,23 @@ test("a_force_ended_tournament_ignores_its_finals_match", () => {
   );
 });
 
-test("force_ending_needs_a_tournament_under_way", () => {
+test("force ending needs a tournament under way", () => {
   const db = newDb();
   makeAdmin(db, "admin");
   call(db, "admin", (tx) =>
-    create_tournament(tx, {
-      swiss_rounds_total: 1,
-      top_cut: 2,
-      match_size: 3,
-      auction_type: { tag: "Vickrey" },
+    createTournament(tx, {
+      swissRoundsTotal: 1,
+      topCut: 2,
+      matchSize: 3,
+      auctionType: { tag: "Vickrey" },
     }),
   );
   const t = [...db.db.tournament.iter()][0]!.id;
   expect(failure(() => forceEnd(db, t))).toBe(
     "This tournament hasn't started; cancel it instead",
   );
-  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
-  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => registerSimBots(tx, { tournamentId: t }));
+  call(db, "admin", (tx) => startTournament(tx, { tournamentId: t }));
   expect(failure(() => forceEnd(db, t, "stranger"))).toBe("Admin only");
   forceEnd(db, t);
   expect(failure(() => forceEnd(db, t))).toBe(
@@ -369,15 +369,15 @@ test("force_ending_needs_a_tournament_under_way", () => {
   );
 });
 
-test("after_a_force_end_a_new_tournament_can_open", () => {
+test("after a force end a new tournament can open", () => {
   const [db, t] = start(1, 2);
   forceEnd(db, t);
   call(db, "admin", (tx) =>
-    create_tournament(tx, {
-      swiss_rounds_total: 1,
-      top_cut: 2,
-      match_size: 3,
-      auction_type: { tag: "Vickrey" },
+    createTournament(tx, {
+      swissRoundsTotal: 1,
+      topCut: 2,
+      matchSize: 3,
+      auctionType: { tag: "Vickrey" },
     }),
   );
   expect(db.db.tournament.count()).toBe(2n);

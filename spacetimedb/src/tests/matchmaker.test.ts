@@ -4,7 +4,7 @@
 import { TimeDuration } from "spacetimedb";
 import { expect, test } from "vitest";
 import { afterMillis } from "../game";
-import { set_matchmaker_config } from "../index";
+import { setMatchmakerConfig } from "../index";
 import {
   call,
   currentAuction,
@@ -36,30 +36,27 @@ function setDefaults(
   who = "admin",
 ) {
   call(db, who, (tx) =>
-    set_matchmaker_config(tx, {
-      starting_rack_size: rackSize,
-      lobby_max_size: lobbySize,
-      auction_duration_ms: auctionMs,
+    setMatchmakerConfig(tx, {
+      startingRackSize: rackSize,
+      lobbyMaxSize: lobbySize,
+      auctionDurationMs: auctionMs,
     }),
   );
 }
 
 function openLobby(db: Test) {
-  return [...db.db.lobby.lobby_by_status.filter({ tag: "Open" })][0]!;
+  return [...db.db.lobby.lobbyByStatus.filter({ tag: "Open" })][0]!;
 }
 
-test("matches_use_the_built_in_defaults_until_an_admin_sets_some", () => {
+test("matches use the built in defaults until an admin sets some", () => {
   const db = adminDb();
   const m = startMatch(db, VICKREY, simIds(db).slice(0, 2));
   const match = getMatch(db, m);
-  expect([match.auction_duration_ms, match.starting_rack_size]).toEqual([
-    1000n,
-    5,
-  ]);
-  expect(openLobby(db).max_size).toBe(6);
+  expect([match.auctionDurationMs, match.startingRackSize]).toEqual([1000n, 5]);
+  expect(openLobby(db).maxSize).toBe(6);
 });
 
-test("set_matchmaker_config_checks_its_values", () => {
+test("set matchmaker config checks its values", () => {
   const db = adminDb();
   const refused = (r: number, l: number, a: bigint, who = "admin") =>
     failure(() => setDefaults(db, r, l, a, who));
@@ -72,30 +69,27 @@ test("set_matchmaker_config_checks_its_values", () => {
   expect(refused(9, 11, 1000n)).toBe(
     "A full lobby would be dealt more tiles than the bag's 98",
   );
-  expect(db.db.matchmaker_config.count()).toBe(0n);
+  expect(db.db.matchmakerConfig.count()).toBe(0n);
 });
 
-test("new_matches_take_the_new_defaults", () => {
+test("new matches take the new defaults", () => {
   const db = adminDb();
   setDefaults(db, 3, 4, 2000n);
   setDefaults(db, 3, 4, 2500n); // saving again updates the one row
-  expect(db.db.matchmaker_config.count()).toBe(1n);
+  expect(db.db.matchmakerConfig.count()).toBe(1n);
 
   const sims = simIds(db).slice(0, 2);
   const m = startMatch(db, VICKREY, sims);
 
   const match = getMatch(db, m);
-  expect([match.auction_duration_ms, match.starting_rack_size]).toEqual([
-    2500n,
-    3,
-  ]);
+  expect([match.auctionDurationMs, match.startingRackSize]).toEqual([2500n, 3]);
   for (const bot of sims) {
     expect(rack(db, m, bot).reduce((n, [, count]) => n + count, 0)).toBe(3);
   }
-  expect(currentAuction(db, m).closes_at).toEqual(afterMillis(now(), 2500n));
+  expect(currentAuction(db, m).closesAt).toEqual(afterMillis(now(), 2500n));
 });
 
-test("a_match_being_played_keeps_its_auction_length", () => {
+test("a match being played keeps its auction length", () => {
   const db = adminDb();
   const m = startMatch(db, VICKREY, simIds(db).slice(0, 2));
   setDefaults(db, 5, 6, 4000n);
@@ -103,25 +97,25 @@ test("a_match_being_played_keeps_its_auction_length", () => {
   db.clock.advance(new TimeDuration(1_000_000n));
   tick(db, m);
 
-  expect(currentAuction(db, m).closes_at).toEqual(
+  expect(currentAuction(db, m).closesAt).toEqual(
     afterMillis(db.clock.now(), 1000n),
   );
 });
 
-test("the_open_lobby_keeps_its_size_and_the_next_one_takes_the_new_one", () => {
+test("the open lobby keeps its size and the next one takes the new one", () => {
   const db = adminDb();
   const first = openLobby(db);
   setDefaults(db, 5, 4, 1000n);
-  expect(openLobby(db).max_size).toBe(6);
+  expect(openLobby(db).maxSize).toBe(6);
 
   lobbyTimeout(db, first.id);
 
   const next = openLobby(db);
   expect(next.id).not.toBe(first.id);
-  expect(next.max_size).toBe(4);
+  expect(next.maxSize).toBe(4);
   const padded = [
-    ...db.db.match_participant.mp_by_match.filter(
-      db.db.lobby.id.find(first.id)!.resolved_match_id!,
+    ...db.db.matchParticipant.mpByMatch.filter(
+      db.db.lobby.id.find(first.id)!.resolvedMatchId!,
     ),
   ];
   expect(padded.length, "the old lobby filled to its own size").toBe(6);
