@@ -2,7 +2,15 @@
 
 import { expect, test } from "vitest";
 import { LOBBY_MAX_SIZE } from "../game";
-import { join_lobby, leave_team, lobby_timeout_tick } from "../index";
+import {
+  create_tournament,
+  join_lobby,
+  leave_team,
+  lobby_timeout_tick,
+  register_for_tournament,
+  register_sim_bots,
+  start_tournament,
+} from "../index";
 import type { Lobby } from "../schema";
 import {
   asClaims,
@@ -11,6 +19,7 @@ import {
   emptyDb,
   failure,
   getMatch,
+  makeAdmin,
   lobbyJob,
   lobbyTimeout,
   newDb,
@@ -250,4 +259,123 @@ test("clients_cannot_force_a_lobby_timeout", () => {
     expect(err).toBe("Only the scheduler may call this");
   }
   expect(openLobby(db).id, "lobby should still be open").toBe(lobby.id);
+});
+
+// ---------- Tournament lockout ----------
+
+/** A tournament with Ann and the sims entered; started unless `open`. */
+function tournamentWithAnn(db: Test, open = false): bigint {
+  makeAdmin(db, "admin");
+  call(db, "admin", (tx) =>
+    create_tournament(tx, {
+      swiss_rounds_total: 1,
+      top_cut: 2,
+      match_size: 3,
+      auction_type: { tag: "Vickrey" },
+    }),
+  );
+  const t = [...db.db.tournament.iter()][0]!.id;
+  call(db, "Ann", (tx) => register_for_tournament(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
+  if (!open) {
+    call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  }
+  return t;
+}
+
+const HELD =
+  "You're playing in a tournament; the lobby reopens to you when you're knocked out or it ends";
+
+test("entrants_cannot_join_the_lobby_once_their_tournament_starts", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  tournamentWithAnn(db);
+  // Finish Ann's Swiss match while the other table plays on, so she is
+  // between matches but still in the tournament.
+  const [own] = [...db.db.match_participant.mp_by_bot.filter(ann)];
+  runToEnd(db, own!.match_id);
+  const running = [
+    ...db.db.match_state.match_by_status.filter({ tag: "Running" }),
+  ];
+  expect(running.length, "the other table is still playing").toBe(1);
+  expect(failure(() => join(db, "Ann"))).toBe(HELD);
+});
+
+test("starting_a_tournament_takes_its_entrants_out_of_the_lobby", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const ben = teamWithBot(db, "bob", "Ben");
+  const t = tournamentWithAnn(db, true);
+  join(db, "Ann");
+  join(db, "Ben");
+
+  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+
+  expect(members(db, openLobby(db).id)).toEqual([ben]);
+  expect(members(db, openLobby(db).id)).not.toContain(ann);
+});
+
+test("a_lobby_skips_members_held_for_a_tournament", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const ben = teamWithBot(db, "bob", "Ben");
+  tournamentWithAnn(db);
+  join(db, "Ben");
+  const lobby = openLobby(db);
+  // A stale row that slipped in before the start.
+  db.db.lobby_member.insert({
+    id: 0n,
+    lobby_id: lobby.id,
+    bot_id: ann,
+    joined_at: now(),
+  });
+
+  lobbyTimeout(db, lobby.id);
+
+  const m = db.db.lobby.id.find(lobby.id)!.resolved_match_id!;
+  const roster = matchRoster(db, m);
+  expect(roster).toContain(ben);
+  expect(roster).not.toContain(ann);
+});
+
+test("sims_in_a_tournament_still_pad_casual_lobbies", () => {
+  const db = newDb();
+  teamWithBot(db, "alice", "Ann");
+  teamWithBot(db, "bob", "Ben");
+  tournamentWithAnn(db);
+  join(db, "Ben");
+  const lobby = openLobby(db);
+
+  lobbyTimeout(db, lobby.id);
+
+  const m = db.db.lobby.id.find(lobby.id)!.resolved_match_id!;
+  expect(matchRoster(db, m).length).toBe(LOBBY_MAX_SIZE);
+});
+
+test("a_knocked_out_entrant_can_join_the_lobby_again", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const t = tournamentWithAnn(db);
+  for (const m of [...db.db.match_participant.mp_by_bot.filter(ann)]) {
+    runToEnd(db, m.match_id);
+  }
+  const entry = [...db.db.tournament_entry.te_by_tournament.filter(t)].find(
+    (e) => e.bot_id === ann,
+  )!;
+  db.db.tournament_entry.id.update({ ...entry, eliminated: true });
+
+  join(db, "Ann");
+});
+
+test("the_lobby_reopens_when_the_tournament_ends", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const t = tournamentWithAnn(db);
+  for (const m of [...db.db.match_participant.mp_by_bot.filter(ann)]) {
+    runToEnd(db, m.match_id);
+  }
+  const tour = db.db.tournament.id.find(t)!;
+  db.db.tournament.id.update({ ...tour, status: { tag: "Ended" } });
+
+  join(db, "Ann");
 });

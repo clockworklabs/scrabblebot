@@ -230,6 +230,12 @@ conn.reducers.unregisterFromTournament({ tournamentId: <id>n });`}</pre>
             waits for yours to finish.
           </li>
           <li>
+            <b>No lobby matches while you're in it.</b> Once the tournament
+            starts, <code>join_lobby</code> refuses its entrants until they're
+            knocked out or it ends, so your bot is always free for its next
+            tournament match. The starter just logs the refusal and waits.
+          </li>
+          <li>
             <b>Stay connected.</b> A registered bot that's offline still gets
             seated, and loses every auction it doesn't bid in.
           </li>

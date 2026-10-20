@@ -23,6 +23,29 @@ export function isActive(t: Tournament): boolean {
   }
 }
 
+// A tournament that has started and not yet finished.
+export function isUnderway(t: Tournament): boolean {
+  return isActive(t) && t.status.tag !== "Registration";
+}
+
+// Whether a bot must stay out of casual matches: it's still in contention
+// in a tournament that's under way, so it has to be free whenever its next
+// tournament match starts. Sim bots are exempt; the module plays them, and
+// they can play any number of matches at once.
+export function heldForTournament(ctx: Ctx, bot_id: bigint): boolean {
+  const bot = ctx.db.bot.id.find(bot_id);
+  if (!bot || bot.is_simulated) {
+    return false;
+  }
+  for (const e of ctx.db.tournament_entry.te_by_bot.filter(bot_id)) {
+    const t = ctx.db.tournament.id.find(e.tournament_id);
+    if (t && isUnderway(t) && !e.eliminated) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function requireRegistration(ctx: Ctx, tournament_id: bigint) {
   const t = ctx.db.tournament.id.find(tournament_id);
   if (!t) {

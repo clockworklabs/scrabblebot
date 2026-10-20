@@ -41,6 +41,7 @@ import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
 import {
   addEntry,
   entryFor,
+  heldForTournament,
   isActive,
   requireRegistration,
   startSwissRound,
@@ -664,6 +665,11 @@ export const join_lobby = spacetimedb.reducer((ctx) => {
   if (botInRunningMatch(ctx, bot_id)) {
     throw new SenderError("You're already in a running match");
   }
+  if (heldForTournament(ctx, bot_id)) {
+    throw new SenderError(
+      "You're playing in a tournament; the lobby reopens to you when you're knocked out or it ends",
+    );
+  }
 
   const lobby = openLobbyOrCreate(ctx);
 
@@ -855,6 +861,14 @@ export const start_tournament = spacetimedb.reducer(
       );
     }
     ctx.db.tournament.id.update({ ...tour, status: { tag: "Swiss" } });
+    // Entrants waiting in the casual lobby leave it.
+    for (const lobby of ctx.db.lobby.lobby_by_status.filter({ tag: "Open" })) {
+      for (const m of [...ctx.db.lobby_member.lm_by_lobby.filter(lobby.id)]) {
+        if (entries.some((e) => e.bot_id === m.bot_id)) {
+          ctx.db.lobby_member.id.delete(m.id);
+        }
+      }
+    }
     orThrow(startSwissRound(ctx, tournament_id, 1));
     console.info(
       `Tournament ${tournament_id} started with ${entries.length} entrants`,

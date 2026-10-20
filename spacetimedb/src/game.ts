@@ -27,7 +27,7 @@ import type {
   MatchParticipant,
   PendingBid,
 } from "./schema";
-import { onTournamentMatchEnded } from "./tournament";
+import { heldForTournament, onTournamentMatchEnded } from "./tournament";
 
 export type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 export type ViewContext = ViewCtx<InferSchema<typeof spacetimedb>>;
@@ -362,10 +362,13 @@ export function resolveLobby(ctx: Ctx, lobby_id: bigint, padWithSims: boolean) {
     return; // already handled
   }
 
-  // Skip members whose bot has since been deleted (its team dissolved).
+  // Skip members whose bot has since been deleted (its team dissolved),
+  // or is being held for a tournament.
   const roster = [...ctx.db.lobby_member.lm_by_lobby.filter(lobby_id)]
     .map((m) => m.bot_id)
-    .filter((id) => ctx.db.bot.id.find(id) != null);
+    .filter(
+      (id) => ctx.db.bot.id.find(id) != null && !heldForTournament(ctx, id),
+    );
 
   if (padWithSims) {
     // Sim bots are reusable — they're driven inside the module, so a
