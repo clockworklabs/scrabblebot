@@ -462,7 +462,10 @@ export const mint_credential_nonce = spacetimedb.reducer((ctx) => {
   if (!bot) {
     throw new SenderError("Your team has no bot");
   }
-  const code = generateNonceCode(ctx);
+  let code = generateNonceCode(ctx, 0);
+  for (let attempt = 1; ctx.db.credential_nonce.code.find(code); attempt++) {
+    code = generateNonceCode(ctx, attempt);
+  }
   const expires_at = afterSeconds(ctx.timestamp, NONCE_TTL_SECONDS);
   const nonce = ctx.db.credential_nonce.insert({
     id: 0n,

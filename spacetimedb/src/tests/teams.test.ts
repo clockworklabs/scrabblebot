@@ -23,6 +23,7 @@ import {
   newDb,
   noncesFor,
   now,
+  plusMicros,
   teamWithBot,
   type Test,
 } from "./harness";
@@ -188,6 +189,22 @@ test("minted_nonces_are_unique_codes_with_a_one_hour_ttl", () => {
     expect(n.bot_id).toBe(botNamed(db, "Robo").id);
     expect(n.expires_at).toEqual(afterSeconds(now(), NONCE_TTL_SECONDS));
   }
+});
+
+// On the host, the SDK maps many timestamps to the same few ctx.random
+// seeds. Codes drawn from them collided, and the second mint failed.
+test("mints_that_share_an_rng_seed_get_different_codes", () => {
+  const db = newDb();
+  create(db, "alice", "Alices", "Robo");
+  create(db, "bob", "Bobs", "Bobo");
+  db.rng.setSeed(1);
+  mint(db, "alice");
+  db.rng.setSeed(1);
+  db.clock.set(plusMicros(now(), 1n));
+  mint(db, "bob");
+  expect(noncesFor(db, "alice")[0]!.code).not.toBe(
+    noncesFor(db, "bob")[0]!.code,
+  );
 });
 
 test("any_team_member_can_mint_for_the_team_bot", () => {

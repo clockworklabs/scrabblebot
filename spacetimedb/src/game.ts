@@ -199,16 +199,32 @@ export function ensureSimBot(
   return { ok: bot.id };
 }
 
-export function generateNonceCode(ctx: Ctx): string {
-  // Random 12-character alphanumeric code. Deterministic in transaction
-  // via ctx.random. ~57 bits of entropy — fine for a single-use code with
-  // short TTL.
+// A 12-character code from an alphabet without lookalikes (60 bits). Not
+// drawn from ctx.random: the SDK's seeding (2.12) maps many timestamps to
+// the same few seeds, so two mints could draw the same code. It
+// mixes the timestamp, the caller and an attempt number instead, and the
+// caller retries with the next attempt if the code is taken.
+export function generateNonceCode(ctx: Ctx, attempt: number): string {
   const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let h = splitmix64(ctx.timestamp.microsSinceUnixEpoch);
+  for (let id = ctx.sender.__identity__; id > 0n; id >>= 64n) {
+    h = splitmix64(h ^ BigInt.asUintN(64, id));
+  }
+  h = splitmix64(h ^ BigInt(attempt));
   let out = "";
   for (let n = 0; n < 12; n++) {
-    out += CHARS[ctx.random.integerInRange(0, CHARS.length - 1)];
+    out += CHARS[Number(h & 31n)];
+    h >>= 5n;
   }
   return out;
+}
+
+// SplitMix64's output function, a cheap 64-bit mixer.
+function splitmix64(x: bigint): bigint {
+  x = BigInt.asUintN(64, x + 0x9e3779b97f4a7c15n);
+  x = BigInt.asUintN(64, (x ^ (x >> 30n)) * 0xbf58476d1ce4e5b9n);
+  x = BigInt.asUintN(64, (x ^ (x >> 27n)) * 0x94d049bb133111ebn);
+  return x ^ (x >> 31n);
 }
 
 // ---------- Match control ----------
