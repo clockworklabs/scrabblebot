@@ -43,6 +43,7 @@ import ClaimCredentialReducer from "./claim_credential_reducer";
 import ConnectIdReducer from "./connect_id_reducer";
 import CreateTeamReducer from "./create_team_reducer";
 import CreateTournamentReducer from "./create_tournament_reducer";
+import ForceEndTournamentReducer from "./force_end_tournament_reducer";
 import JoinLobbyReducer from "./join_lobby_reducer";
 import JoinTeamReducer from "./join_team_reducer";
 import LeaveTeamReducer from "./leave_team_reducer";
@@ -629,6 +630,7 @@ const reducersSchema = __reducers(
   __reducerSchema("connect_id", ConnectIdReducer),
   __reducerSchema("create_team", CreateTeamReducer),
   __reducerSchema("create_tournament", CreateTournamentReducer),
+  __reducerSchema("force_end_tournament", ForceEndTournamentReducer),
   __reducerSchema("join_lobby", JoinLobbyReducer),
   __reducerSchema("join_team", JoinTeamReducer),
   __reducerSchema("leave_team", LeaveTeamReducer),

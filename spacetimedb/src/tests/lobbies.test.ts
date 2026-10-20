@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { LOBBY_MAX_SIZE } from "../game";
 import {
   create_tournament,
+  force_end_tournament,
   join_lobby,
   leave_team,
   lobby_timeout_tick,
@@ -376,6 +377,18 @@ test("the_lobby_reopens_when_the_tournament_ends", () => {
   }
   const tour = db.db.tournament.id.find(t)!;
   db.db.tournament.id.update({ ...tour, status: { tag: "Ended" } });
+
+  join(db, "Ann");
+});
+
+test("the_lobby_reopens_when_the_tournament_is_stopped", () => {
+  const db = newDb();
+  const ann = teamWithBot(db, "alice", "Ann");
+  const t = tournamentWithAnn(db);
+  for (const m of [...db.db.match_participant.mp_by_bot.filter(ann)]) {
+    runToEnd(db, m.match_id);
+  }
+  call(db, "admin", (tx) => force_end_tournament(tx, { tournament_id: t }));
 
   join(db, "Ann");
 });

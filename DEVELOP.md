@@ -162,9 +162,14 @@ Matches after the cut wait for the admin: `start_next_finals_match` starts
 the next elimination match or final game, and refuses while one is being
 played, so the finals can be run from a stage.
 
+`force_end_tournament` stops a tournament that's under way, leaving it
+`ForceEnded` with no champion. Its matches in progress play out as
+ordinary matches.
+
 `TournamentMatch` links `Tournament` ↔ `Match` rows with `round` and
 `phase`. The logic lives in `tournament.ts`: `onTournamentMatchEnded`
-scores each result, and stops moving a tournament once it has finished.
+scores each result, and stops moving a tournament once it has finished or
+been stopped.
 
 ## Sealed-bid implementation
 
@@ -215,6 +220,7 @@ assume the caller already *is* the human.
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
 | `create_tournament(...)` / `start_tournament(id)` / `cancel_tournament(id)` / `register_sim_bots(id)` | Admin | |
 | `start_next_finals_match(id)` | Admin | One finals match at a time |
+| `force_end_tournament(id)` | Admin | Stops a tournament under way: status `ForceEnded`, no champion |
 | `register_for_tournament(id)` / `unregister_from_tournament(id)` | Bot credential | Only while the tournament is in `Registration` |
 | `auction_tick` / `lobby_timeout_tick` | Scheduler only | `requireScheduler` rejects any client caller |
 

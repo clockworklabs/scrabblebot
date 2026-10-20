@@ -43,6 +43,7 @@ import {
   entryFor,
   heldForTournament,
   isActive,
+  isUnderway,
   requireRegistration,
   startNextFinalsMatch,
   startSwissRound,
@@ -875,6 +876,34 @@ export const start_tournament = spacetimedb.reducer(
     console.info(
       `Tournament ${tournament_id} started with ${entries.length} entrants`,
     );
+  },
+);
+
+// Stops a tournament that's under way, for when it can't or shouldn't
+// finish. Its matches in progress play out, but their results no longer
+// count, and its entrants are free to play in the lobby again.
+export const force_end_tournament = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    requireAdmin(ctx);
+    const tour = ctx.db.tournament.id.find(tournament_id);
+    if (!tour) {
+      throw new SenderError("Unknown tournament");
+    }
+    if (tour.status.tag === "Registration") {
+      throw new SenderError(
+        "This tournament hasn't started; cancel it instead",
+      );
+    }
+    if (!isUnderway(tour)) {
+      throw new SenderError("This tournament has already finished");
+    }
+    ctx.db.tournament.id.update({
+      ...tour,
+      status: { tag: "ForceEnded" },
+      ended_at: ctx.timestamp,
+    });
+    console.info(`Tournament ${tournament_id} stopped by an admin`);
   },
 );
 

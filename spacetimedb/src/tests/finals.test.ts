@@ -4,6 +4,7 @@
 import { expect, test } from "vitest";
 import {
   create_tournament,
+  force_end_tournament,
   register_sim_bots,
   start_next_finals_match,
   start_tournament,
@@ -289,4 +290,95 @@ test("a_finished_tournament_has_placings_for_its_finalists", () => {
     es.filter((e) => e.final_finish_position === undefined).length,
     "the two cut after the Swiss rounds have no placing",
   ).toBe(2);
+});
+
+// ---------- Stopping a tournament ----------
+
+const forceEnd = (db: Test, t: bigint, who = "admin") =>
+  call(db, who, (tx) => force_end_tournament(tx, { tournament_id: t }));
+
+test("force_ending_stops_a_tournament_where_it_is", () => {
+  const [db, t] = start(2, 4);
+  const round1 = matchesIn(db, t, "Swiss");
+
+  forceEnd(db, t);
+
+  const tour = db.db.tournament.id.find(t)!;
+  expect(tour.status.tag).toBe("ForceEnded");
+  expect(tour.ended_at).toEqual(db.clock.now());
+  expect(tour.winner_bot_id).toBeUndefined();
+  // The matches it had going play out, but don't move it on.
+  for (const m of round1) {
+    runToEnd(db, m.match_id);
+  }
+  expect(matchesIn(db, t, "Swiss").length, "no second round").toBe(
+    round1.length,
+  );
+  expect(status(db, t)).toBe("ForceEnded");
+  expect(
+    [...db.db.tournament_entry.te_by_tournament.filter(t)].every(
+      (e) => e.swiss_points === 0,
+    ),
+    "results after the stop don't count",
+  ).toBe(true);
+});
+
+test("a_force_ended_tournament_ignores_its_finals_match", () => {
+  const [db, t] = start(1, 4);
+  for (const m of matchesIn(db, t, "Swiss")) {
+    runToEnd(db, m.match_id);
+  }
+  startNext(db, t);
+  const before = alive(db, t);
+
+  forceEnd(db, t);
+  runToEnd(db, matchesIn(db, t, "Bracket")[0]!.match_id);
+
+  expect(alive(db, t)).toEqual(before);
+  expect(
+    [...db.db.tournament_entry.te_by_tournament.filter(t)].some(
+      (e) => e.final_finish_position !== undefined,
+    ),
+  ).toBe(false);
+  expect(failure(() => startNext(db, t))).toBe(
+    "The tournament isn't in its finals",
+  );
+});
+
+test("force_ending_needs_a_tournament_under_way", () => {
+  const db = newDb();
+  makeAdmin(db, "admin");
+  call(db, "admin", (tx) =>
+    create_tournament(tx, {
+      swiss_rounds_total: 1,
+      top_cut: 2,
+      match_size: 3,
+      auction_type: { tag: "Vickrey" },
+    }),
+  );
+  const t = [...db.db.tournament.iter()][0]!.id;
+  expect(failure(() => forceEnd(db, t))).toBe(
+    "This tournament hasn't started; cancel it instead",
+  );
+  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  expect(failure(() => forceEnd(db, t, "stranger"))).toBe("Admin only");
+  forceEnd(db, t);
+  expect(failure(() => forceEnd(db, t))).toBe(
+    "This tournament has already finished",
+  );
+});
+
+test("after_a_force_end_a_new_tournament_can_open", () => {
+  const [db, t] = start(1, 2);
+  forceEnd(db, t);
+  call(db, "admin", (tx) =>
+    create_tournament(tx, {
+      swiss_rounds_total: 1,
+      top_cut: 2,
+      match_size: 3,
+      auction_type: { tag: "Vickrey" },
+    }),
+  );
+  expect(db.db.tournament.count()).toBe(2n);
 });

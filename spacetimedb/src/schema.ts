@@ -30,6 +30,7 @@ export const TournamentStatus = t.enum("TournamentStatus", [
   "Final",
   "Ended",
   "Registration", // created; bots are signing up
+  "ForceEnded", // stopped by an admin before it finished
 ]);
 export type TournamentStatus = Infer<typeof TournamentStatus>;
 

@@ -342,6 +342,7 @@ export const TournamentStatus = __t.enum("TournamentStatus", {
   Final: __t.unit(),
   Ended: __t.unit(),
   Registration: __t.unit(),
+  ForceEnded: __t.unit(),
 });
 export type TournamentStatus = __Infer<typeof TournamentStatus>;
 

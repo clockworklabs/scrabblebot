@@ -29,6 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
   Bracket: "finals",
   Final: "the final",
   Ended: "finished",
+  ForceEnded: "stopped",
 };
 
 export default function Tournament() {
@@ -110,6 +111,20 @@ export default function Tournament() {
             entries={entries}
             botName={botName}
           />
+          {rounds}
+        </>
+      );
+    case "ForceEnded":
+      return (
+        <>
+          {header}
+          <Panel full>
+            <p>
+              An admin stopped this tournament before it finished, so it has no
+              champion.
+            </p>
+          </Panel>
+          {standings}
           {rounds}
         </>
       );

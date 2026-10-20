@@ -190,6 +190,7 @@ function Underway({
   tournament: Tournament;
 }) {
   const [error, run] = useAction();
+  const [stopping, setStopping] = useState(false);
   const inFinals =
     tournament.status.tag === "Bracket" || tournament.status.tag === "Final";
   const playing = tournamentMatchRunning(conn, tournament.id);
@@ -208,8 +209,8 @@ function Underway({
             : "Waiting for you to start the next finals match."}{" "}
         <Link to="/tournament">Follow it</Link>.
       </p>
-      {inFinals && (
-        <div className="actions">
+      <div className="actions">
+        {inFinals && (
           <button
             className="button"
             disabled={playing}
@@ -219,7 +220,32 @@ function Underway({
           >
             Start next finals match
           </button>
-        </div>
+        )}
+        {stopping ? (
+          <>
+            <button
+              className="button"
+              onClick={() =>
+                run(conn.reducers.forceEndTournament({ tournamentId }))
+              }
+            >
+              Stop it for good
+            </button>
+            <button className="button quiet" onClick={() => setStopping(false)}>
+              Keep it going
+            </button>
+          </>
+        ) : (
+          <button className="button quiet" onClick={() => setStopping(true)}>
+            Stop the tournament
+          </button>
+        )}
+      </div>
+      {stopping && (
+        <p className="secondary">
+          Stopping ends the tournament with no champion. Matches being played
+          finish, but don't count.
+        </p>
       )}
       {error && <p className="error">{error}</p>}
     </Panel>
