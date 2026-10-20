@@ -11,7 +11,7 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  humanIdentity: __t.identity().name("human_identity"),
+  humanIdentity: __t.identity().primaryKey().name("human_identity"),
   addedAt: __t.timestamp().name("added_at"),
   addedBy: __t.option(__t.identity()).name("added_by"),
 });

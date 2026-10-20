@@ -11,7 +11,7 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  auctionId: __t.u64().name("auction_id"),
+  auctionId: __t.u64().primaryKey().name("auction_id"),
   matchId: __t.u64().name("match_id"),
   topBid: __t.i64().name("top_bid"),
   visible: __t.bool(),

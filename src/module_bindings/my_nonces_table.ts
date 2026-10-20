@@ -11,7 +11,7 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64(),
+  id: __t.u64().primaryKey(),
   code: __t.string(),
   botId: __t.u64().name("bot_id"),
   creator: __t.identity(),
