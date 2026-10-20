@@ -9,7 +9,7 @@ collected letters at any time to earn currency, which funds future bids. Long
 words pay a superlinear bonus, so hoarding is rewarded.
 
 Built on [SpacetimeDB](https://spacetimedb.com): rules, timing, lobby
-formation, dictionary — all inside a Rust module. Bots are external
+formation, dictionary — all inside a TypeScript module. Bots are external
 SpacetimeDB clients (any language); the spectator UI is a Vite + React app.
 
 Live at **[scrabblebot.vercel.app](https://scrabblebot.vercel.app)** ·
@@ -23,7 +23,7 @@ the module is nested inside it.
 | Path | What it is |
 |---|---|
 | `src/`, `index.html`, `vite.config.ts` | Vite + React spectator UI |
-| `spacetimedb/` | Rust module — schema, reducers, scheduled lobby + auction ticks, dictionary |
+| `spacetimedb/` | TypeScript module — schema, reducers, scheduled lobby + auction ticks, dictionary |
 | `bot-starter/` | TypeScript starter bot — fork & edit `src/strategy.ts` |
 
 ## How a match comes together
@@ -97,12 +97,13 @@ For development work on the module or UI:
 
 ```bash
 npm install
+npm install --prefix spacetimedb
 npm run dev
 ```
 
 This launches `spacetime dev` against maincloud — auto-builds the module,
 publishes it, regenerates client bindings, and starts the Vite client on
-http://localhost:5173. Edit `spacetimedb/src/lib.rs` and changes flow
+http://localhost:5173. Edit `spacetimedb/src/` and changes flow
 straight through to the browser.
 
 The maincloud database name is set in `spacetime.local.json` (defaults to

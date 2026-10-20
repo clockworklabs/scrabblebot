@@ -8,7 +8,7 @@ you're only writing a bot, see [README.md](README.md) and
 
 | Where | What it is | Stack |
 |---|---|---|
-| `spacetimedb/` | The whole game — schema, reducers, scheduled ticks, dictionary | Rust → WASM via [SpacetimeDB](https://spacetimedb.com) |
+| `spacetimedb/` | The whole game — schema, reducers, scheduled ticks, dictionary | TypeScript module on [SpacetimeDB](https://spacetimedb.com) |
 | `src/` | Spectator + admin + team UI | Vite + React + react-router-dom |
 | `bot-starter/` | Reference bot client | Node + TypeScript + SpacetimeDB SDK |
 | `spacetime.json` / `spacetime.local.json` | Project config (module path, db name, dev client command) | — |
@@ -25,7 +25,7 @@ There is no separate backend or auth server.
                           ▼
                   ┌─────────────────┐
               ┌──▶│   reducers      │──┐
-              │   │   (lib.rs)      │  │
+              │   │   (index.ts)    │  │
               │   └─────────────────┘  │
               │                        ▼
               │              ┌─────────────────┐
@@ -72,16 +72,16 @@ times:
 3. If **6 real bots** join, the lobby resolves immediately into a Match.
 4. If the timer fires first, `lobby_timeout_tick` pads the roster up to 6
    with idle simulated bots and resolves.
-5. The resolving step in both cases is `resolve_lobby()`: marks the lobby
-   `Resolved`, starts the match (`start_match_with`), and calls
-   `open_lobby_or_create()` to spawn the next one.
+5. The resolving step in both cases is `resolveLobby()`: marks the lobby
+   `Resolved`, starts the match (`startMatchWith`), and calls
+   `openLobbyOrCreate()` to spawn the next one.
 
 The cycle is self-sustaining as long as there are at least 2 participants
 (real or sim) available at resolve time. If fewer, the lobby is
 `Cancelled` and a fresh one opens.
 
 Lobby `auction_type` is currently hardcoded to `Vickrey` in
-`open_lobby_or_create`. Easy knob to expose later if we want to alternate.
+`openLobbyOrCreate`. Easy knob to expose later if we want to alternate.
 
 ## Match lifecycle
 
@@ -90,7 +90,7 @@ Each match has its own row in `Match`. State is fully per-match:
 - `MatchParticipant { match_id, bot_id, balance, score }` — replaces what
   used to live on `Bot` (we're a multi-match game).
 - `BagLetter { match_id, letter, remaining }` — each match has its own
-  bag, drawn via `ctx.rng()` for determinism.
+  bag, drawn via `ctx.random` for determinism.
 - `Auction { match_id, letter, status, opens_at, closes_at }` — one open
   auction at a time per match. The next auction is scheduled by
   `auction_tick`.
@@ -107,15 +107,14 @@ Each match has its own row in `Match`. State is fully per-match:
 `auction_tick` is a self-rescheduling scheduled reducer that runs every
 `AUCTION_DURATION_MS` (1s). It closes the current auction (computes winner
 and `paid` according to `AuctionType`), credits the rack, opens the next
-auction, and on bag empty calls `on_match_ended(match_id)`.
+auction, and on bag empty calls `onMatchEnded(match_id)`.
 
-`on_match_ended` does two things:
+`onMatchEnded` does two things:
 
-1. **ELO update** — `update_elo_at_match_end` runs pairwise: for each
-   pair `(i, j)` of participants sorted by score, compute expected
-   probability from current ratings, observe the outcome (1/0/0.5),
-   accumulate a delta per bot, apply averaged over `(n − 1)` opponents.
-   K=32.
+1. **ELO update** — `updateEloAtMatchEnd` rates each participant
+   against every other by final score, with Elo (K=32) and Weng-Lin
+   (OpenSkill). `ratings.ts` is a port of the Rust `skillratings` crate
+   the module used before, and reproduces its results exactly.
 2. **Tournament hook** — if the match was part of a tournament, advance
    the tournament (award Swiss points, eliminate bracket losers, etc.).
 
@@ -137,9 +136,9 @@ Three phases on a single Tournament row:
   games determines the winner.
 
 `TournamentMatch` links `Tournament` ↔ `Match` rows with `round` and
-`phase`. The advancement logic lives in `on_match_ended` and the
-`advance_tournament` / `start_swiss_round` / `start_elimination_round` /
-`start_final_game` helpers.
+`phase`. The advancement logic lives in `onMatchEnded` and the
+`advanceTournament` / `startSwissRound` / `startEliminationRound` /
+`startFinalGame` helpers in `game.ts`.
 
 ## Sealed-bid implementation
 
@@ -156,21 +155,21 @@ bids via subscription deltas, but for a hackathon this is sufficient.
 
 | View | Returns | Purpose |
 |---|---|---|
-| `my_rack` | `Vec<Holding>` | The caller's letters across all matches they're in (private to caller) |
-| `my_team` | `Option<MyTeam>` | The calling human's team summary (resolves browser→human via `HumanLink`) |
-| `my_nonces` | `Vec<CredentialNonce>` | Nonces the caller has minted (private to caller) |
-| `my_admin` | `Option<Admin>` | Caller's admin row if present |
+| `my_rack` | `Holding[]` | The caller's letters across all matches they're in (private to caller) |
+| `my_team` | `TeamSummary \| undefined` | The calling human's team summary (resolves browser→human via `HumanLink`) |
+| `my_nonces` | `CredentialNonce[]` | Nonces the caller has minted (private to caller) |
+| `my_admin` | `Admin \| undefined` | Caller's admin row if present |
 
 Views are how we let clients query data that depends on the caller's
 identity without exposing it to everyone. Two helpers handle the
 browser-vs-CLI ambiguity:
 
-```rust
-fn resolve_human(ctx: &ReducerContext) -> Identity;
-fn resolve_human_view(ctx: &ViewContext) -> Identity;
+```ts
+function resolveHuman(ctx: Ctx): Identity;
+function resolveHumanView(ctx: ViewContext): Identity;
 ```
 
-Both look up `HumanLink` by `ctx.sender()`; if the caller is a linked
+Both look up `HumanLink` by `ctx.sender`; if the caller is a linked
 browser session, return the linked spacetime.com identity, otherwise
 assume the caller already *is* the human.
 
@@ -179,19 +178,19 @@ assume the caller already *is* the human.
 | Reducer | Caller | Notes |
 |---|---|---|
 | `connect_id(web_identity)` | Human (CLI) | Writes a `HumanLink` |
-| `create_team(team, bot)` / `join_team` / `leave_team` / `promote_to_owner` | Human | Resolves caller via `resolve_human` |
+| `create_team(team, bot)` / `join_team` / `leave_team` / `promote_to_owner` | Human | Resolves caller via `resolveHuman` |
 | `mint_credential_nonce()` | Team member | Writes a `CredentialNonce` |
 | `claim_credential(code)` | Fresh anonymous client | Writes a `BotCredential` |
-| `join_lobby()` | Bot credential | Looks up `caller_bot_id` via `BotCredential` |
+| `join_lobby()` | Bot credential | Looks up `callerBotId` via `BotCredential` |
 | `submit_bid(auction_id, amount)` | Bot credential | Idempotent — replaces any earlier bid by this bot on this auction |
 | `submit_word(match_id, word)` | Bot credential | Validates dictionary + ownership, deducts letters, credits score |
 | `bootstrap_admin()` | Anyone (first time only) | Allowed iff `Admin` table is empty |
-| `add_admin` / `remove_admin` | Admin | Caller checked via `require_admin` |
+| `add_admin` / `remove_admin` | Admin | Caller checked via `requireAdmin` |
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
 | `start_tournament(...)` | Admin | — |
-| `auction_tick` / `lobby_timeout_tick` | Scheduler only | `require_scheduler` rejects any client caller |
+| `auction_tick` / `lobby_timeout_tick` | Scheduler only | `requireScheduler` rejects any client caller |
 
-Reducers that move shared state are admin-gated via `require_admin(ctx)?`
+Reducers that move shared state are admin-gated via `requireAdmin(ctx)`
 at the top of the function.
 
 ## Init seeding
@@ -206,7 +205,7 @@ dev republishes counts). It seeds:
 3. **The first lobby** — kicks the perpetual lobby cycle into motion.
 
 To add yourself as a permanent admin, add your spacetime.com identity hex
-to `SEED_ADMIN_HEX` in `lib.rs`.
+to `SEED_ADMIN_HEX` in `game.ts`.
 
 ## Frontend architecture
 
@@ -255,8 +254,9 @@ public events.
 ## Dev workflow
 
 ```bash
-npm install      # web
-npm run dev      # spacetime dev + Vite together
+npm install                       # web
+npm install --prefix spacetimedb  # module
+npm run dev                       # spacetime dev + Vite together
 ```
 
 `npm run dev` runs:
@@ -270,24 +270,20 @@ For local development, use `npm run dev:local` (requires
 
 ### Tests
 
-The module has native unit tests under `spacetimedb/src/tests/`. They use
-SpacetimeDB's test harness (`spacetimedb::test_utils`, the `test-utils`
-feature, 2.12.0+): each test builds a fresh in-memory database from the
-module schema, calls reducers and views directly as a chosen caller, and
-inspects every table, private ones included. No server needed.
+The module has unit tests under `spacetimedb/src/tests/`. They use
+SpacetimeDB's test harness (`spacetimedb/server/test-utils`, 2.12.0+) with
+Vitest: each test builds a fresh in-memory database from the module
+schema, calls reducers and views directly as a chosen caller, and inspects
+every table, private ones included. No server needed.
 
 ```bash
 cd spacetimedb
-cargo test                 # the suite (~10s)
-cargo test -- --ignored    # known bugs / open questions, expected to fail
+npm test                   # the suite (~3s)
 ```
 
-Tests marked `#[ignore = "bug: ..."]` or `"TODO.md: ..."` pin down known
-problems; un-ignore one when you fix it.
-
-`Cargo.lock` is tracked on purpose: the harness pulls in the SpacetimeDB
-engine, and an unlocked resolve picks an `icu_calendar` that its
-`temporal_rs` dependency can't compile against.
+The harness doesn't run scheduled reducers or check `senderAuth` the way a
+host does, so also try changes against a real server (`npm run
+dev:local`).
 
 ### Database name
 
@@ -297,9 +293,8 @@ place on maincloud (preserving data): `spacetime rename <db-identity-hex>
 
 ### Versions matter
 
-`spacetimedb` Cargo crate, npm `spacetimedb` (web app and bot-starter),
-and the `spacetime` CLI should all be on the same version — currently
-2.12.0. A version mismatch manifests as TypeScript generated bindings
+npm `spacetimedb` (module, web app and bot-starter) and the `spacetime`
+CLI should all be on the same version, currently 2.12.0. A version mismatch manifests as TypeScript generated bindings
 using `name:` while the SDK expects `accessor:` for `IndexOpts` —
 typecheck fails immediately.
 
