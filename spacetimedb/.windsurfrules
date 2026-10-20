@@ -1,95 +1,26 @@
-# SpacetimeDB Rules (All Languages)
+# SpacetimeDB Core Concepts
 
-## Migrating from 1.0 to 2.0?
-
-**If you are migrating existing SpacetimeDB 1.0 code to 2.0, apply `spacetimedb-migration-2.0.mdc` first.** It documents breaking changes (reducer callbacks → event tables, `name`→`accessor`, `sender()` method, etc.) and should be considered before other rules.
+SpacetimeDB is a relational database that is also a server. It lets you upload application logic directly into the database as modules, eliminating the traditional web/game server layer entirely. Rust, C#, and C++ modules compile to WebAssembly, while TypeScript modules run on V8.
 
 ---
 
-## Language-Specific Rules
+## Critical Rules
 
-| Language | Rule File |
-|----------|-----------|
-| **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
-| **Rust** | `spacetimedb-rust.mdc` (MANDATORY) |
-| **C#** | `spacetimedb-csharp.mdc` (MANDATORY) |
-| **Migrating 1.0 → 2.0** | `spacetimedb-migration-2.0.mdc` |
-
----
-
-## Core Concepts
-
-1. **Reducers are transactional** — they do not return data to callers
-2. **Reducers must be deterministic** — no filesystem, network, timers, or random
-3. **Read data via tables/subscriptions** — not reducer return values
-4. **Auto-increment IDs are not sequential** — gaps are normal, don't use for ordering
-5. **`ctx.sender` is the authenticated principal** — never trust identity args
+1. **Reducers are transactional.** They do not return data to callers. Use subscriptions to read data.
+2. **Reducers must be deterministic.** Do not use filesystem, network, external clocks, or external random sources in reducers. Use the reducer context (`ctx`) for SpacetimeDB-provided timestamp and deterministic random values.
+3. **Read data via tables/subscriptions**, not reducer return values. Clients get data through subscribed queries.
+4. **Auto-increment IDs are not sequential.** Gaps are normal, do not use for ordering. Use timestamps or explicit sequence columns.
+5. **`ctx.sender` is the authenticated principal.** Never trust identity passed as arguments.
 
 ---
 
 ## Feature Implementation Checklist
 
-When implementing a feature that spans backend and client:
-
 1. **Backend:** Define table(s) to store the data
 2. **Backend:** Define reducer(s) to mutate the data
 3. **Client:** Subscribe to the table(s)
-4. **Client:** Call the reducer(s) from UI — **don't forget this step!**
+4. **Client:** Call the reducer(s) from UI
 5. **Client:** Render the data from the table(s)
-
-**Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
-
----
-
-## Index System
-
-SpacetimeDB automatically creates indexes for:
-- Primary key columns
-- Columns marked as unique
-
-You can add explicit indexes on non-unique columns for query performance.
-
-**Index names must be unique across your entire module (all tables).** If two tables have indexes with the same declared name → conflict error.
-
-**Schema ↔ Code coupling:**
-- Your query code references indexes by name
-- If you add/remove/rename an index in the schema, update all code that uses it
-- Removing an index without updating queries causes runtime errors
-
----
-
-## Commands
-
-```bash
-# Login to allow remote database deployment e.g. to maincloud
-spacetime login
-
-# Start local SpacetimeDB
-spacetime start
-
-# Publish module
-spacetime publish <db-name> --module-path <module-path>
-
-# Clear and republish
-spacetime publish <db-name> --clear-database -y --module-path <module-path>
-
-# Generate client bindings
-spacetime generate --lang <lang> --out-dir <out> --module-path <module-path>
-
-# View logs
-spacetime logs <db-name>
-```
-
----
-
-## Deployment
-
-- Maincloud is the spacetimedb hosted cloud and the default location for module publishing
-- The default server marked by *** in `spacetime server list` should be used when publishing
-- If the default server is maincloud you should publish to maincloud
-- Publishing to maincloud is free of charge
-- When publishing to maincloud the database dashboard will be at the url: https://spacetimedb.com/@<username>/<database-name>
-- The database owner can view utilization and performance metrics on the dashboard
 
 ---
 
@@ -99,672 +30,602 @@ spacetime logs <db-name>
 2. Is the module published? (`spacetime publish`)
 3. Are client bindings generated? (`spacetime generate`)
 4. Check server logs for errors (`spacetime logs <db-name>`)
-5. **Is the reducer actually being called from the client?**
+5. Is the reducer actually being called from the client?
 
 ---
 
-## Editing Behavior
+## Tables
 
-- Make the smallest change necessary
-- Do NOT touch unrelated files, configs, or dependencies
-- Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo
-- Do NOT add restrictions the prompt didn't ask for — if "users can do X", implement X for all users
+- **Private tables** (default): Only accessible by reducers and the database owner.
+- **Public tables**: Exposed for client read access through subscriptions. Writes still require reducers.
 
+Organize data by access pattern, not by entity:
 
-# SpacetimeDB Rust SDK
-
-## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
-
-These are **actual errors** observed when LLMs generate SpacetimeDB Rust code:
-
-### 1. Wrong Crate for Server vs Client
-
-```rust
-// ❌ WRONG — using client crate for server module
-use spacetimedb_sdk::*;  // This is for CLIENTS only!
-
-// ✅ CORRECT — use spacetimedb for server modules
-use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+```
+Player          PlayerState         PlayerStats
+id         <--  player_id           player_id
+name            position_x          total_kills
+                position_y          total_deaths
+                velocity_x          play_time
 ```
 
-### 2. Wrong Table Macro Syntax
+## Reducers
 
-```rust
-// ❌ WRONG — using attribute-style like C#
-#[spacetimedb::table]
-#[primary_key]
-pub struct User { ... }
+Reducers are transactional functions that modify database state. They run atomically, cannot interact with the outside world, and do not return data to callers. See the language-specific server skills for syntax.
 
-// ❌ WRONG — SpacetimeType on tables (causes conflicts!)
-#[derive(SpacetimeType)]
-#[table(accessor = my_table)]
-pub struct MyTable { ... }
+## Event Tables
 
-// ✅ CORRECT — use #[table(...)] macro with options, NO SpacetimeType
-#[table(accessor = user, public)]
-pub struct User {
-    #[primary_key]
-    identity: Identity,
-    name: Option<String>,
-}
-```
+Event tables broadcast reducer-specific data to clients. Rows are never stored in the client cache (`count()` returns 0, `iter()` yields nothing); only `onInsert` callbacks fire.
 
-### 3. Wrong Table Access Pattern
+## Subscriptions
 
-```rust
-// ❌ WRONG — using ctx.Db or ctx.db() method or field access
-ctx.Db.user.Insert(...);
-ctx.db().user().insert(...);
-ctx.db.player;  // Field access
+Subscriptions replicate database rows to clients in real-time.
 
-// ✅ CORRECT — ctx.db is a field, table names are methods with parentheses
-ctx.db.user().insert(User { ... });
-ctx.db.user().identity().find(ctx.sender);
-ctx.db.player().id().find(&player_id);
-```
+1. **Subscribe**: Register SQL queries describing needed data
+2. **Receive initial data**: All matching rows are sent immediately
+3. **Receive updates**: Real-time updates when subscribed rows change
+4. **React to changes**: Use callbacks (`onInsert`, `onDelete`, `onUpdate`)
 
-### 4. Wrong Update Pattern
+Best practices:
+- Group subscriptions by lifetime
+- Subscribe before unsubscribing when updating subscriptions
+- Avoid overlapping queries
+- Use indexes for efficient queries
 
-```rust
-// ❌ WRONG — partial update or using .update() directly on table
-ctx.db.user().update(User { name: Some("new".into()), ..Default::default() });
+## Modules
 
-// ✅ CORRECT — find existing, spread it, update via primary key accessor
-if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-    ctx.db.user().identity().update(User { name: Some("new".into()), ..user });
-}
-```
+Modules contain application logic that runs inside the database.
 
-### 5. Wrong Reducer Return Type
+- **Tables**: Define the data schema
+- **Reducers**: Define callable functions that modify state
+- **Event Tables**: Broadcast reducer-specific data to clients
+- **Views**: Read-only functions that expose computed subsets of data to clients
+- **Procedures**: (Unstable) Functions that can have side effects (HTTP requests, `ctx.withTx`)
 
-```rust
-// ❌ WRONG — returning data from reducer
-#[reducer]
-pub fn get_user(ctx: &ReducerContext, id: Identity) -> Option<User> { ... }
+Server-side modules can be written in: Rust, C#, TypeScript, C++
 
-// ❌ WRONG — mutable context
-pub fn my_reducer(ctx: &mut ReducerContext, ...) { }
+Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 
-// ✅ CORRECT — reducers return Result<(), String> or nothing, immutable context
-#[reducer]
-pub fn do_something(ctx: &ReducerContext, value: String) -> Result<(), String> {
-    if value.is_empty() {
-        return Err("Value cannot be empty".to_string());
-    }
-    Ok(())
-}
-```
+## Identity
 
-### 6. Wrong Client Connection Pattern
+- **Identity**: A long-lived, globally unique identifier for a user.
+- **ConnectionId**: Identifies a specific client connection.
+- Always use `ctx.sender` / `ctx.Sender` / `ctx.sender()` for authorization.
 
-```rust
-// ❌ WRONG — subscribing before connected
-let conn = DbConnection::builder().build()?;
-conn.subscription_builder().subscribe_to_all_tables();  // NOT CONNECTED YET!
+SpacetimeDB works with many OIDC providers, including SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, and GitHub.
 
-// ✅ CORRECT — subscribe in on_connect callback
-DbConnection::builder()
-    .on_connect(|conn, identity, token| {
-        conn.subscription_builder()
-            .on_applied(|ctx| println!("Ready!"))
-            .subscribe_to_all_tables();
-    })
-    .build()?;
-```
 
-### 7. Forgetting to Advance the Connection
+# SpacetimeDB CLI
 
-```rust
-// ❌ WRONG — connection never processes messages
-let conn = DbConnection::builder().build()?;
-// ... callbacks never fire ...
+Use this skill when the user needs help with the `spacetime` CLI tool - initializing projects, building modules, publishing databases, querying data, managing servers, or troubleshooting CLI issues.
 
-// ✅ CORRECT — must call one of these to process messages
-conn.run_threaded();           // Spawn background thread
-// OR
-conn.run_async().await;        // Async task
-// OR (in game loop)
-conn.frame_tick()?;            // Manual polling
-```
+## Quick Reference
 
-### 8. Missing Table Trait Import
-
-```rust
-// ❌ WRONG — "no method named `insert` found"
-use spacetimedb::{table, reducer, ReducerContext};
-ctx.db.user().insert(...);  // ERROR!
-
-// ✅ CORRECT — import Table trait for table methods
-use spacetimedb::{table, reducer, Table, ReducerContext};
-ctx.db.user().insert(...);  // Works!
-```
-
-### 9. Wrong ScheduleAt Variant
-
-```rust
-// ❌ WRONG — At variant doesn't exist
-scheduled_at: ScheduleAt::At(future_time),
-
-// ✅ CORRECT — use Time variant
-scheduled_at: ScheduleAt::Time(future_time),
-```
-
-### 10. Identity to String Conversion
-
-```rust
-// ❌ WRONG — to_hex() returns HexString<32>, not String
-let id: String = identity.to_hex();  // Type mismatch!
-
-// ✅ CORRECT — chain .to_string()
-let id: String = identity.to_hex().to_string();
-```
-
-### 11. Timestamp Duration Extraction
-
-```rust
-// ❌ WRONG — returns Result, not Duration directly
-let micros = ctx.timestamp.to_duration_since_unix_epoch().as_micros();
-
-// ✅ CORRECT — unwrap the Result
-let micros = ctx.timestamp.to_duration_since_unix_epoch()
-    .unwrap_or_default()
-    .as_micros();
-```
-
-### 12. Borrow After Move
-
-```rust
-// ❌ WRONG — `tool` moved into struct, then borrowed
-ctx.db.stroke().insert(Stroke { tool, color, ... });
-if tool == "eraser" { ... }  // ERROR: value moved!
-
-// ✅ CORRECT — check before move, or use clone
-let is_eraser = tool == "eraser";
-ctx.db.stroke().insert(Stroke { tool, color, ... });
-if is_eraser { ... }
-```
-
-### 13. Client SDK Uses Blocking I/O
-
-The SpacetimeDB Rust client SDK uses blocking I/O. If mixing with async runtimes (Tokio, async-std), use `spawn_blocking` or run the SDK on a dedicated thread to avoid blocking the async executor.
-
-### 14. Wrong Schedule Syntax
-```rust
-// ❌ WRONG — `schedule` is not a valid table type
-#[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
-
-// ✅ CORRECT — `scheduled` is a valid table type
-#[table(name = tick_timer, scheduled(reducer = tick, column = scheduled_at))]
-```
----
-
-## 1) Common Mistakes Table
-
-### Server-side errors
-
-| Wrong | Right | Error |
-|-------|-------|-------|
-| `#[derive(SpacetimeType)]` on `#[table]` | Remove it — macro handles this | Conflicting derive macros |
-| `ctx.db.player` (field access) | `ctx.db.player()` (method) | "no field `player` on type" |
-| `ctx.db.player().find(id)` | `ctx.db.player().id().find(&id)` | Must access via index |
-| `&mut ReducerContext` | `&ReducerContext` | Wrong context type |
-| Missing `use spacetimedb::Table;` | Add import | "no method named `insert`" |
-| `#[table(accessor = "my_table")]` | `#[table(accessor = my_table)]` | String literals not allowed |
-| Missing `public` on table | Add `public` flag | Clients can't subscribe |
-| `#[spacetimedb::reducer]` | `#[reducer]` after import | Wrong attribute path |
-| Network/filesystem in reducer | Use procedures instead | Sandbox violation |
-| Panic for expected errors | Return `Result<(), String>` | WASM instance destroyed |
-
----
-
-## 2) Table Definition (CRITICAL)
-
-**Tables use `#[table(...)]` macro on `pub struct`. DO NOT derive `SpacetimeType` on tables!**
-
-> ⚠️ **CRITICAL:** Always import `Table` trait — required for `.insert()`, `.iter()`, `.find()`, etc.
-
-```rust
-use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
-
-// ❌ WRONG — DO NOT derive SpacetimeType on tables!
-#[derive(SpacetimeType)]  // REMOVE THIS!
-#[table(accessor = task)]
-pub struct Task { ... }
-
-// ✅ CORRECT — just the #[table] attribute
-#[table(accessor = user, public)]
-pub struct User {
-    #[primary_key]
-    identity: Identity,
-    
-    #[unique]
-    username: Option<String>,
-    
-    online: bool,
-}
-
-#[table(accessor = message, public)]
-pub struct Message {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    
-    sender: Identity,
-    text: String,
-    sent: Timestamp,
-}
-
-// With multi-column index
-#[table(accessor = task, public, index(name = by_owner, btree(columns = [owner_id])))]
-pub struct Task {
-    #[primary_key]
-    #[auto_inc]
-    pub id: u64,
-    pub owner_id: Identity,
-    pub title: String,
-}
-```
-
-### Table Options
-
-```rust
-#[table(accessor = my_table)]           // Private table (default)
-#[table(accessor = my_table, public)]   // Public table - clients can subscribe
-```
-
-### Column Attributes
-
-```rust
-#[primary_key]           // Primary key (auto-indexed, enables .find())
-#[auto_inc]              // Auto-increment (use with #[primary_key])
-#[unique]                // Unique constraint (auto-indexed)
-#[index(btree)]          // B-Tree index for queries
-```
-
-### Insert returns ROW, not ID
-
-```rust
-let row = ctx.db.task().insert(Task {
-    id: 0,  // auto-inc placeholder
-    owner_id: ctx.sender,
-    title: "New task".to_string(),
-    created_at: ctx.timestamp,
-});
-let new_id = row.id;  // Get the actual ID
-```
-
----
-
-## 3) Reducers
-
-### Definition Syntax
-
-```rust
-use spacetimedb::{reducer, ReducerContext, Table};
-
-#[reducer]
-pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
-    // Validate input
-    if text.is_empty() {
-        return Err("Message cannot be empty".to_string());
-    }
-    
-    // Insert returns the inserted row
-    let row = ctx.db.message().insert(Message {
-        id: 0,  // auto-inc placeholder
-        sender: ctx.sender,
-        text,
-        sent: ctx.timestamp,
-    });
-    
-    log::info!("Message {} sent by {:?}", row.id, ctx.sender);
-    Ok(())
-}
-```
-
-### Update Pattern (CRITICAL)
-
-```rust
-#[reducer]
-pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    // Find existing row
-    let user = ctx.db.user().identity().find(ctx.sender)
-        .ok_or("User not found")?;
-    
-    // ✅ CORRECT — spread existing row, override specific fields
-    ctx.db.user().identity().update(User {
-        name: Some(name),
-        ..user  // Preserves identity, online, etc.
-    });
-    
-    Ok(())
-}
-
-// ❌ WRONG — partial update nulls out other fields!
-// ctx.db.user().identity().update(User { identity: ctx.sender, name: Some(name), ..Default::default() });
-```
-
-### Delete Pattern
-
-```rust
-#[reducer]
-pub fn delete_message(ctx: &ReducerContext, message_id: u64) -> Result<(), String> {
-    ctx.db.message().id().delete(&message_id);
-    Ok(())
-}
-```
-
-### Lifecycle Hooks
-
-```rust
-#[reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    // Called when module is first published
-}
-
-#[reducer(client_connected)]
-pub fn client_connected(ctx: &ReducerContext) {
-    // ctx.sender is the connecting identity
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        ctx.db.user().identity().update(User { online: true, ..user });
-    } else {
-        ctx.db.user().insert(User {
-            identity: ctx.sender,
-            username: None,
-            online: true,
-        });
-    }
-}
-
-#[reducer(client_disconnected)]
-pub fn client_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        ctx.db.user().identity().update(User { online: false, ..user });
-    }
-}
-```
-
-### ReducerContext fields
-
-```rust
-ctx.sender          // Identity of the caller
-ctx.timestamp       // Current timestamp
-ctx.db              // Database access
-ctx.rng             // Deterministic RNG (use instead of rand)
-```
-
----
-
-## 4) Index Access
-
-### Primary Key / Unique — `.find()` returns `Option<Row>`
-
-```rust
-// Primary key lookup
-let user = ctx.db.user().identity().find(ctx.sender);
-
-// Unique column lookup  
-let user = ctx.db.user().username().find(&"alice".to_string());
-
-if let Some(user) = user {
-    // Found
-}
-```
-
-### BTree Index — `.filter()` returns iterator
-
-```rust
-#[table(accessor = message, public)]
-pub struct Message {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    
-    #[index(btree)]
-    room_id: u64,
-    
-    text: String,
-}
-
-// Filter by indexed column
-for msg in ctx.db.message().room_id().filter(&room_id) {
-    // Process each message in room
-}
-```
-
-### No Index — `.iter()` + manual filter
-
-```rust
-// Full table scan
-for user in ctx.db.user().iter() {
-    if user.online {
-        // Process online users
-    }
-}
-```
-
----
-
-## 5) Custom Types
-
-**Use `#[derive(SpacetimeType)]` ONLY for custom structs/enums used as fields or parameters.**
-
-```rust
-use spacetimedb::SpacetimeType;
-
-// Custom struct for table fields
-#[derive(SpacetimeType, Clone, Debug, PartialEq)]
-pub struct Position {
-    pub x: i32,
-    pub y: i32,
-}
-
-// Custom enum
-#[derive(SpacetimeType, Clone, Debug, PartialEq)]
-pub enum PlayerStatus {
-    Idle,
-    Walking(Position),
-    Fighting(Identity),
-}
-
-// Use in table (DO NOT derive SpacetimeType on the table!)
-#[table(accessor = player, public)]
-pub struct Player {
-    #[primary_key]
-    pub id: Identity,
-    pub position: Position,
-    pub status: PlayerStatus,
-}
-```
-
----
-
-## 6) Scheduled Tables
-
-```rust
-use spacetimedb::{table, reducer, ReducerContext, ScheduleAt, Timestamp};
-
-#[table(accessor = cleanup_job, scheduled(cleanup_expired))]
-pub struct CleanupJob {
-    #[primary_key]
-    #[auto_inc]
-    scheduled_id: u64,
-    
-    scheduled_at: ScheduleAt,
-    target_id: u64,
-}
-
-#[reducer]
-pub fn cleanup_expired(ctx: &ReducerContext, job: CleanupJob) {
-    // Job row is auto-deleted after reducer completes
-    log::info!("Cleaning up: {}", job.target_id);
-}
-
-// Schedule a job
-#[reducer]
-pub fn schedule_cleanup(ctx: &ReducerContext, target_id: u64, delay_ms: u64) {
-    let future_time = ctx.timestamp + std::time::Duration::from_millis(delay_ms);
-    ctx.db.cleanup_job().insert(CleanupJob {
-        scheduled_id: 0,  // auto-inc placeholder
-        scheduled_at: ScheduleAt::Time(future_time),
-        target_id,
-    });
-}
-
-// Cancel by deleting the row
-#[reducer]
-pub fn cancel_cleanup(ctx: &ReducerContext, job_id: u64) {
-    ctx.db.cleanup_job().scheduled_id().delete(&job_id);
-}
-```
-
----
-
-## 7) Client SDK
-
-```rust
-// Connection pattern
-let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
-    .with_module_name("my-module")
-    .with_token(load_saved_token())  // None for first connection
-    .on_connect(on_connected)
-    .build()
-    .expect("Failed to connect");
-
-// Subscribe in on_connect callback, NOT before!
-fn on_connected(conn: &DbConnection, identity: Identity, token: &str) {
-    conn.subscription_builder()
-        .on_applied(|ctx| println!("Ready!"))
-        .subscribe_to_all_tables();
-}
-```
-
-### ⚠️ CRITICAL: Advance the Connection
-
-**You MUST call one of these** — without it, no callbacks fire:
-
-```rust
-conn.run_threaded();           // Background thread (simplest)
-conn.run_async().await;        // Async task
-conn.frame_tick()?;            // Manual polling (game loops)
-```
-
-### Table Access & Callbacks
-
-```rust
-// Iterate
-for user in ctx.db.user().iter() { ... }
-
-// Find by primary key
-if let Some(user) = ctx.db.user().identity().find(&identity) { ... }
-
-// Row callbacks
-ctx.db.user().on_insert(|ctx, user| { ... });
-ctx.db.user().on_update(|ctx, old, new| { ... });
-ctx.db.user().on_delete(|ctx, user| { ... });
-
-// Call reducers
-ctx.reducers.set_name("Alice".to_string()).unwrap();
-```
-
----
-
-## 8) Procedures (Beta)
-
-**Procedures are for side effects (HTTP, filesystem) that reducers can't do.**
-
-⚠️ Procedures are currently in beta. API may change.
-
-```rust
-use spacetimedb::{procedure, ProcedureContext};
-
-// Simple procedure
-#[procedure]
-fn add_numbers(_ctx: &mut ProcedureContext, a: u32, b: u32) -> u64 {
-    a as u64 + b as u64
-}
-
-// Procedure with database access
-#[procedure]
-fn save_external_data(ctx: &mut ProcedureContext, url: String) -> Result<(), String> {
-    // HTTP request (allowed in procedures, not reducers)
-    let data = fetch_from_url(&url)?;
-
-    // Database access requires explicit transaction
-    ctx.try_with_tx(|tx| {
-        tx.db.external_data().insert(ExternalData {
-            id: 0,
-            content: data,
-        });
-        Ok(())
-    })?;
-
-    Ok(())
-}
-```
-
-### Key differences from reducers
-
-| Reducers | Procedures |
-|----------|------------|
-| `&ReducerContext` (immutable) | `&mut ProcedureContext` (mutable) |
-| Direct `ctx.db` access | Must use `ctx.with_tx()` |
-| No HTTP/network | HTTP allowed |
-| No return values | Can return data |
-
----
-
-## 9) Logging
-
-```rust
-use spacetimedb::log;
-
-log::trace!("Detailed trace");
-log::debug!("Debug info");
-log::info!("Information");
-log::warn!("Warning");
-log::error!("Error occurred");
-```
-
----
-
-## 10) Commands
+### Project Initialization & Development
 
 ```bash
-# Start local server
-spacetime start
+# Initialize new project
+spacetime init my-project --lang rust|csharp|typescript|cpp
+spacetime init my-project --template <template-id>
 
-# Publish module
-spacetime publish <module-name> --module-path <backend-dir>
+# Build module
+spacetime build                    # release build
+spacetime build --debug            # faster iteration, slower runtime
 
-# Clear database and republish
-spacetime publish <module-name> --clear-database -y --module-path <backend-dir>
+# Dev mode (auto-rebuild, auto-publish, generates bindings)
+spacetime dev
+spacetime dev --client-lang typescript --module-bindings-path ./client/src/module_bindings
 
-# Generate bindings
-spacetime generate --lang rust --out-dir <client>/src/module_bindings --module-path <backend-dir>
-
-# View logs
-spacetime logs <module-name>
+# Generate client bindings
+spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-path ./server
+spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
----
+### Publishing & Deployment
 
-## 11) Hard Requirements
+```bash
+# Publish to Maincloud (default)
+spacetime publish my-database --yes
 
-**Rust-specific:**
+# Publish to local server
+spacetime publish my-database --server local --yes
 
-1. **DO NOT derive `SpacetimeType` on `#[table]` structs** — the macro handles this
-2. **Import `Table` trait** — `use spacetimedb::Table;` required for `.insert()`, `.iter()`, etc.
-3. **Use `&ReducerContext`** — not `&mut ReducerContext`
-4. **Tables are methods** — `ctx.db.table()` not `ctx.db.table`
-5. **Server modules use `spacetimedb` crate** — clients use `spacetimedb-sdk`
-6. **Reducers must be deterministic** — no filesystem, network, timers, or external RNG
-7. **Use `ctx.rng`** — not `rand` crate for random numbers
-8. **Use `ctx.timestamp`** — never `std::time::SystemTime::now()` in reducers
-9. **Client MUST advance connection** — call `run_threaded()`, `run_async()`, or `frame_tick()`
-10. **Subscribe in `on_connect` callback** — not before connection is established
-11. **Update requires full row** — spread existing row with `..existing`
-12. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
-13. **Identity to String needs `.to_string()`** — `identity.to_hex().to_string()`
-14. **Client SDK is blocking** — use `spawn_blocking` or dedicated thread if mixing with async runtimes
+# Clear database and republish
+spacetime publish my-database --delete-data=always --yes
+```
+
+### Database Interaction
+
+```bash
+# SQL queries
+spacetime sql my-database "SELECT * FROM users"
+spacetime sql my-database --interactive   # REPL mode
+
+# Call reducers (each argument is a separate positional arg)
+spacetime call my-database my_reducer '"value"' '123'
+
+# Subscribe to changes
+spacetime subscribe my-database "SELECT * FROM users" --num-updates 10
+
+# View logs
+spacetime logs my-database -f              # follow logs
+spacetime logs my-database -n 100          # up to 100 log lines
+
+# Describe schema
+# (without --json, output is human-readable text)
+spacetime describe my-database --json
+spacetime describe my-database tables --json   # also views, reducers, procedures, routes, env, types
+spacetime describe my-database tables users --json
+spacetime describe my-database reducers my_reducer --json
+```
+
+### Database Management
+
+```bash
+# List databases
+spacetime list
+
+# Delete database
+spacetime delete my-database
+
+# Rename database
+spacetime rename <database-identity> --to new-name
+```
+
+### Server Management
+
+```bash
+# List configured servers
+spacetime server list
+
+# Add server
+spacetime server add local --url http://localhost:3000 --default
+spacetime server add myserver --url https://my-spacetime.example.com
+
+# Set default server
+spacetime server set-default local
+
+# Test connectivity
+spacetime server ping local
+
+# Start local instance
+spacetime start
+
+# Clear local data
+spacetime server clear
+```
+
+### Authentication
+
+```bash
+# Login (opens browser)
+spacetime login
+
+# Login with token
+spacetime login --token <token>
+
+# Show login status
+spacetime login show
+
+# Logout
+spacetime logout
+```
+
+## Default Servers
+
+| Name | URL | Description |
+|------|-----|-------------|
+| `maincloud` | `https://maincloud.spacetimedb.com` | Production cloud (default) |
+| `local` | `http://127.0.0.1:3000` | Local development server |
+
+## Common Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--server` | `-s` | Target server (nickname, hostname, or URL) |
+| `--yes` | `-y` | Non-interactive mode (skip confirmations) |
+| `--anonymous` | | Use anonymous identity |
+| `--module-path` | `-p` | Path to module project |
+| `--no-config` | | Ignore `spacetime.json` project configuration |
+
+## Troubleshooting
+
+### "Not logged in"
+```bash
+spacetime login
+# Or use --anonymous for public operations
+```
+
+### "Server not responding"
+```bash
+spacetime server ping <server>
+# For local: ensure spacetime start is running
+```
+
+### "Schema conflict"
+```bash
+# Clear data and republish
+spacetime publish my-db --delete-data=always --yes
+```
+
+### "Build failed"
+```bash
+# Check Rust/C# toolchain
+rustup show
+# For Rust modules, ensure wasm32-unknown-unknown target
+rustup target add wasm32-unknown-unknown
+```
+
+## Module Languages
+
+**Server-side (modules):** Rust, C#, TypeScript, C++
+**Client SDKs:** TypeScript, C#, Rust, Unreal Engine
+**CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
+
+
+# SpacetimeDB TypeScript SDK Reference
+
+## Module Structure
+
+Tables are built with `table()`, bound with `schema()`, and exported as default. Reducers and lifecycle hooks are `export const`:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+const scoreRecord = table(
+  { name: 'score_record', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity(),
+    value: t.u32(),
+  }
+);
+
+const spacetimedb = schema({ scoreRecord });  // ONE object, not spread args
+export default spacetimedb;
+
+export const addRecord = spacetimedb.reducer(
+  { value: t.u32() },
+  (ctx, { value }) => {
+    ctx.db.scoreRecord.insert({ id: 0n, owner: ctx.sender, value });
+  }
+);
+```
+
+Only table definitions belong in `schema({...})`. Row and object builders used as reducer arguments or view return types are not schema entries.
+
+Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, HTTP exports, and visibility filters. Keep ordinary helper functions and constants unexported.
+
+## Imports
+
+Schema builders and module exports come from `spacetimedb/server`. Runtime value classes such as `ScheduleAt`, `Timestamp`, and `ConnectionId` come from the root `spacetimedb` package; `Range` comes from `spacetimedb/server`:
+
+```typescript
+import {
+  schema, table, t, SenderError,
+  type InferSchema, type ReducerCtx,
+} from 'spacetimedb/server';
+import { ConnectionId, ScheduleAt, Timestamp } from 'spacetimedb';
+import { Range } from 'spacetimedb/server';
+```
+
+## Tables
+
+`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field MUST be snake_case:
+
+```typescript
+const entity = table(
+  { name: 'entity', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    active: t.bool(),
+  }
+);
+```
+
+Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
+
+`ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ scoreRecord })` -> `ctx.db.scoreRecord`. Keep TypeScript identifiers and accessors camelCase. Use explicit `name: 'snake_case'` strings when you need a canonical database name that differs from the TypeScript identifier.
+
+## Column Types
+
+Every column is a `t` builder value:
+
+| Builder | JS type | Notes |
+|---------|---------|-------|
+| `t.u8()` / `t.u16()` / `t.u32()` | number | |
+| `t.i8()` / `t.i16()` / `t.i32()` | number | |
+| `t.u64()` | bigint | Use `0n` literals |
+| `t.i64()` | bigint | Use `0n` literals |
+| `t.u128()` / `t.i128()` / `t.u256()` / `t.i256()` | bigint | |
+| `t.f64()` / `t.f32()` | number | |
+| `t.bool()` | boolean | |
+| `t.string()` | string | |
+| `t.identity()` | Identity | |
+| `t.connectionId()` | ConnectionId | |
+| `t.timestamp()` | Timestamp | |
+| `t.timeDuration()` | TimeDuration | |
+| `t.scheduleAt()` | ScheduleAt | |
+
+Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
+
+Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
+
+Optional columns: `nickname: t.option(t.string())`
+
+Schema builders describe the database's wire types; they are not TypeScript type names. For example, a `t.u16()` value is a TypeScript `number`, not a value cast to a type named `u16`.
+
+## Indexes
+
+Use inline `.index('btree')` when a single-column index does not need a named accessor. Use an `indexes` entry when the accessor is named explicitly or the index spans multiple columns. Every `indexes` entry requires `columns`; do not also add `.index('btree')` to the same column.
+
+```typescript
+// Inline (preferred for single-column):
+authorId: t.u64().index('btree'),
+// Access: ctx.db.post.authorId.filter(authorId);
+
+// Multi-column (named):
+indexes: [{ accessor: 'by_group_user', algorithm: 'btree', columns: ['groupId', 'userId'] }]
+// Access: ctx.db.membership.by_group_user.filter([groupId, userId]);
+```
+
+Prefer a multi-column index over filtering by one column and looping. Filter takes an array in index column order; a prefix scan passes the leading value bare: `filter(groupId)`.
+
+The published module's **entry file must export the schema as default**. If you split tables
+(`schema.ts`) from reducers/lifecycle (`index.ts`), re-export it from the entry:
+
+```typescript
+// index.ts
+export { default } from './schema';   // re-export the schema for the module entry
+```
+
+## Reducers
+
+Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
+
+```typescript
+export const createEntity = spacetimedb.reducer(
+  { name: t.string(), age: t.i32() },
+  (ctx, { name, age }) => {
+    ctx.db.entity.insert({ identity: ctx.sender, name, age, active: true });
+  }
+);
+
+// No arguments, just the callback:
+export const doReset = spacetimedb.reducer((ctx) => { ... });
+```
+
+Reducer args accept any column type, including arrays of custom types: `{ splits: t.array(Split) }`. Do not pass JSON strings for structured data.
+
+## DB Operations
+
+```typescript
+ctx.db.scoreRecord.insert({ id: 0n, owner: ctx.sender, value: 1 });  // Insert (0n for autoInc)
+ctx.db.scoreRecord.id.find(recordId);                     // Find by PK → row | null
+ctx.db.entity.identity.find(ctx.sender);                   // Find by unique column
+[...ctx.db.post.authorId.filter(authorId)];                // Filter → spread to Array
+[...ctx.db.entity.iter()];                                 // All rows → Array
+ctx.db.scoreRecord.id.update({ ...existing, value: 2 });  // Update (spread + override)
+ctx.db.scoreRecord.id.delete(recordId);                   // Delete by PK
+```
+
+Insert through the table accessor (`ctx.db.scoreRecord.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
+
+`insert(...)` returns the inserted row, including database-assigned auto-increment fields.
+
+The accessor for a primary key or index is the declared column name. For example, a primary key named `eventId` is accessed as `ctx.db.event.eventId`, not `ctx.db.event.id`.
+
+The schema value registers module exports but does not expose database rows. Pass a context into any helper that needs `ctx.db`.
+
+Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
+
+## Lifecycle Hooks
+
+MUST be `export const`. Bare calls are silently ignored:
+
+```typescript
+export const init = spacetimedb.init((ctx) => { ... });
+export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
+```
+
+`ctx.connectionId` is `ConnectionId | null`, including in lifecycle contexts. Guard it before passing it to a helper or using it as a table key.
+
+## Reducer Context API
+
+`ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. Let exported callbacks infer their context type. In helpers, use `ReducerCtx<InferSchema<typeof spacetimedb>>`; do not annotate a context as `any`, because that erases table row types and can make `bigint` expressions infer as `number`.
+
+```typescript
+type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+
+function findRecord(ctx: Ctx, id: bigint) {
+  return ctx.db.scoreRecord.id.find(id);
+}
+```
+
+```typescript
+// Auth: ctx.sender is the caller's Identity
+if (!row.owner.equals(ctx.sender)) throw new SenderError('unauthorized');
+
+// ctx.connectionId: the per-connection id, NULLABLE (ConnectionId | null) — null-check before use.
+// One Identity can hold several connections (multiple tabs/devices).
+if (ctx.connectionId) { /* ... */ }
+
+// Server timestamp (deterministic per reducer call)
+ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
+
+// Deterministic RNG
+const f: number = ctx.random();                          // [0.0, 1.0)
+const roll: number = ctx.random.integerInRange(1, 6);    // safe JS number bounds/result, inclusive
+const storedRoll: bigint = BigInt(roll);                 // convert the result for an i64/u64 column
+const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
+
+// Client: Timestamp → Date
+new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
+```
+
+Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): serialization fails and kills the module. Identities come from `ctx.sender` or `t.identity()` columns.
+
+Construct a `ConnectionId` from its numeric representation with `new ConnectionId(value)` after importing `ConnectionId` from `spacetimedb`.
+
+Construct exact timestamps with `new Timestamp(micros)` after importing `Timestamp` from `spacetimedb`. Inclusive index ranges use `Range` from `spacetimedb/server`:
+
+```typescript
+import { Timestamp } from 'spacetimedb';
+import { Range } from 'spacetimedb/server';
+
+ctx.db.shipment.deliverBy.filter(new Range(
+  { tag: 'included', value: new Timestamp(1_000n) },
+  { tag: 'included', value: new Timestamp(2_000n) },
+));
+```
+
+## Scheduled Tables
+
+The reducer or procedure referenced by a table's `scheduled` option must be exported.
+
+```typescript
+import { ScheduleAt } from 'spacetimedb';   // ScheduleAt comes from the root package
+
+const tickTimer = table({
+  name: 'tick_timer',
+}, {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+});
+
+export const tick = spacetimedb.reducer(
+  { onSchedule: tickTimer },
+  { timer: tickTimer.rowType },
+  (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
+);
+
+// `onSchedule` also works for scheduled procedures whose return type is `t.unit()`.
+// Legacy table-side scheduling, `scheduled: (): any => tick`, still works but is not
+// recommended for new code because it forces a forward reference.
+
+// One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
+// Repeating: ScheduleAt.interval(60_000_000n)
+// Read time back from a scheduleAt value (tagged union):
+//   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
+```
+
+## Custom Types
+
+```typescript
+// Product type (struct):
+const Position = t.object('Position', { x: t.i32(), y: t.i32() });
+const entity = table({ name: 'entity' }, {
+  id: t.u64().primaryKey().autoInc(),
+  pos: Position,
+});
+
+// Sum type (tagged union):
+const Shape = t.enum('Shape', {
+  circle: t.i32(),
+  rectangle: t.object('Rect', { w: t.i32(), h: t.i32() }),
+});
+// Values: { tag: 'circle', value: 10 }
+```
+
+## Views
+
+A client subscribing to a view receives only the rows it returns. Use a per-user view
+(keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
+(e.g. a membership row) automatically drops the rows it was exposing from that client.
+
+`t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
+
+Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
+
+```typescript
+// Anonymous view (same for all clients):
+export const activeUsers = spacetimedb.anonymousView(
+  { name: 'active_users', public: true },
+  t.array(entity.rowType),
+  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+);
+
+// Per-user view (varies by ctx.sender):
+export const myProfile = spacetimedb.view(
+  { name: 'my_profile', public: true },
+  t.option(entity.rowType),
+  (ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined
+);
+```
+
+For a procedural view primary key, define the output with `t.row` and mark its field `.primaryKey()`:
+
+```typescript
+const CatalogKey = t.row('CatalogKey', {
+  sku: t.u64().primaryKey(),
+  label: t.string(),
+});
+```
+
+Query-builder views use `ctx.from` and return the query directly. Because a query returns a row set, declare its return schema as `t.array(tableName.rowType)`. Use `where` for predicates and `rightSemijoin` when the result should contain right-side rows that have a matching left-side row:
+
+```typescript
+ctx => ctx.from.article.where(article => article.published.eq(true))
+ctx => ctx.from.subscription.rightSemijoin(
+  ctx.from.account,
+  (subscription, account) => subscription.accountId.eq(account.id)
+)
+```
+
+The method name identifies which side is returned: `A.leftSemijoin(B, ...)` returns rows from `A`, while `A.rightSemijoin(B, ...)` returns rows from `B`. To return one table's rows when another table has a match, put the returned table on the corresponding side. Semijoins do not project combined columns from both tables.
+
+Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
+
+## Client Visibility Filters
+
+```typescript
+export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM owned_row WHERE owner = :sender'
+);
+```
+
+## Procedures and HTTP
+
+`spacetimedb` is the local schema value returned by `schema({...})`; it is not a named export to import from `spacetimedb/server`.
+
+Procedures declare argument and return types:
+
+```typescript
+const Result = t.object('Result', { value: t.string() });
+
+export const inspect = spacetimedb.procedure(
+  { input: t.string() },
+  Result,
+  (_ctx, { input }) => ({ value: input })
+);
+```
+
+Procedure callbacks are synchronous. Do not mark them `async` or use `await`; return the declared value directly. A procedure with return type `t.unit()` returns `{}`.
+
+TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-GET requests; it does not provide convenience methods such as `get()` or `post()`. Responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs.
+
+`t.array(t.u8())` values are `number[]`. Convert one to `new Uint8Array(value)` before using it as a binary request body.
+
+Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
+
+Scheduled procedures use the same `onSchedule` binding as scheduled reducers. The procedure must be exported, return `t.unit()`, and accept the scheduled row as its argument.
+
+Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
+
+`httpHandler` and `httpRouter` are methods on the local `spacetimedb` schema value, not named imports.
+
+```typescript
+import { Router, SyncResponse } from 'spacetimedb/server';
+
+export const health = spacetimedb.httpHandler((_ctx, _request) =>
+  new SyncResponse('ok', {
+    status: 200,
+    headers: { 'content-type': 'text/plain' },
+  })
+);
+export const routes = spacetimedb.httpRouter(new Router().get('/health', health));
+```
+
+Handlers are synchronous: return `SyncResponse` directly rather than marking the callback `async`. Pass the exported `httpHandler(...)` value to the router, not its raw callback. The router selects the path, while a handler reads request data with APIs such as `request.text()`; `Request` has no `path` property. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
