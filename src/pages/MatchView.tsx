@@ -32,7 +32,7 @@ export default function MatchView() {
   const botName = botNames(conn);
   const participants = standingsByMatch(conn).get(matchId) ?? [];
   const { results, plays } = matchHistory(conn, matchId);
-  const racks = reconstructRacks(results, plays);
+  const racks = reconstructRacks(results, plays, m.startingRackSize);
 
   return (
     <>
@@ -71,6 +71,7 @@ export default function MatchView() {
             plays={plays}
             botName={botName}
             now={Date.now()}
+            startingRackSize={m.startingRackSize}
           />
         )}
       </Panel>

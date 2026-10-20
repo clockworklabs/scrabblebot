@@ -39,6 +39,7 @@ export function letterValue(c: string): number {
 }
 
 // Standard Scrabble distribution, no blanks. 98 tiles total.
+export const BAG_SIZE = 98;
 export const DEFAULT_BAG: readonly (readonly [string, number])[] = [
   ["A", 9],
   ["B", 2],

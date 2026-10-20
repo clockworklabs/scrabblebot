@@ -79,7 +79,11 @@ export default function Home() {
               match={live}
               auction={openAuctions(conn).get(live.id)}
               standings={standingsOf(live)}
-              racks={reconstructRacks(history.results, history.plays)}
+              racks={reconstructRacks(
+                history.results,
+                history.plays,
+                live.startingRackSize,
+              )}
               plays={history.plays}
               others={running.slice(1)}
               botName={botName}
@@ -227,6 +231,7 @@ function LiveCard({
           botName={botName}
           now={now}
           limit={3}
+          startingRackSize={match.startingRackSize}
         />
       </div>
       <BagBar bagTotal={match.bagTotal} />

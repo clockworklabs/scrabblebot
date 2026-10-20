@@ -29,4 +29,6 @@ export default __t.row({
   createdAt: __t.timestamp().name("created_at"),
   startedAt: __t.option(__t.timestamp()).name("started_at"),
   endedAt: __t.option(__t.timestamp()).name("ended_at"),
+  auctionDurationMs: __t.u64().name("auction_duration_ms"),
+  startingRackSize: __t.u32().name("starting_rack_size"),
 });

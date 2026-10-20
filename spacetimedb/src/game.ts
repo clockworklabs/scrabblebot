@@ -24,6 +24,7 @@ import type {
   Holding,
   Lobby,
   Match,
+  MatchmakerConfig,
   MatchParticipant,
   PendingBid,
 } from "./schema";
@@ -63,6 +64,18 @@ export const LOBBY_DURATION_SECONDS = 90n;
 // straight into Holding (private), so opponents can't see them until the
 // bot plays them in a word.
 export const STARTING_RACK_SIZE = 5;
+
+// Admins can change the auction length, rack size and lobby size from
+// these defaults; see `set_matchmaker_config`.
+export function matchDefaults(ctx: Ctx): Omit<MatchmakerConfig, "id"> {
+  return (
+    ctx.db.matchmaker_config.id.find(0) ?? {
+      starting_rack_size: STARTING_RACK_SIZE,
+      lobby_max_size: LOBBY_MAX_SIZE,
+      auction_duration_ms: AUCTION_DURATION_MS,
+    }
+  );
+}
 
 // Hardcoded seed admins — inserted by `init` on every fresh database init
 // so wiping data (e.g. `--delete-data on-conflict` during dev) doesn't lock
@@ -219,6 +232,7 @@ export function startMatchWith(
     return { err: `Unknown bot in roster: ${missing}` };
   }
   const bag_total = DEFAULT_BAG.reduce((sum, [, count]) => sum + count, 0);
+  const { auction_duration_ms, starting_rack_size } = matchDefaults(ctx);
   const inserted = ctx.db.match_state.insert({
     id: 0n,
     status: { tag: "Running" },
@@ -229,6 +243,8 @@ export function startMatchWith(
     created_at: ctx.timestamp,
     started_at: ctx.timestamp,
     ended_at: undefined,
+    auction_duration_ms,
+    starting_rack_size,
   });
   const match_id = inserted.id;
 
@@ -255,7 +271,7 @@ export function startMatchWith(
   // hidden from opponents (Holding is private) and only become derivable
   // when a bot plays a word with them.
   for (const bid of participants) {
-    for (let n = 0; n < STARTING_RACK_SIZE; n++) {
+    for (let n = 0; n < starting_rack_size; n++) {
       const letter = drawLetter(ctx, match_id);
       if (letter === undefined) {
         break;
@@ -269,7 +285,7 @@ export function startMatchWith(
     return { err: "Bag empty" };
   }
   const opens_at = ctx.timestamp;
-  const closes_at = afterMillis(ctx.timestamp, AUCTION_DURATION_MS);
+  const closes_at = afterMillis(ctx.timestamp, auction_duration_ms);
   const opened = ctx.db.auction.insert({
     id: 0n,
     match_id,
@@ -337,7 +353,7 @@ export function openLobbyOrCreate(ctx: Ctx): Lobby {
     status: { tag: "Open" },
     opens_at: ctx.timestamp,
     closes_at,
-    max_size: LOBBY_MAX_SIZE,
+    max_size: matchDefaults(ctx).lobby_max_size,
     auction_type: { tag: "Vickrey" },
     resolved_match_id: undefined,
   });
@@ -619,7 +635,7 @@ export function closeAuction(ctx: Ctx, match_id: bigint) {
   }
 
   const opens_at = ctx.timestamp;
-  const closes_at = afterMillis(ctx.timestamp, AUCTION_DURATION_MS);
+  const closes_at = afterMillis(ctx.timestamp, m2.auction_duration_ms);
   const next_auction = ctx.db.auction.insert({
     id: 0n,
     match_id,

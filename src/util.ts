@@ -10,16 +10,14 @@ export function fmtTimestamp(ts: {
   return Number(ts.__timestamp_micros_since_unix_epoch__) / 1000;
 }
 
-// Mirrors STARTING_RACK_SIZE in spacetimedb/src/lib.rs: every participant is
-// dealt this many tiles at match start, into the private `holding` table.
-export const STARTING_RACK_SIZE = 5;
-
 // What the public can know about one bot's rack: the letters it won at
 // auction and hasn't yet played, plus a count of tiles still face-down.
 export type PublicRack = { known: Map<string, number>; hidden: number };
 
 // Reconstruct each bot's rack in a match from public AuctionResult + WordPlay
-// events, keyed by bot id.
+// events, keyed by bot id. Every participant is dealt `startingRackSize`
+// tiles (the match's `startingRackSize`) at the start, into the private
+// `holding` table.
 //
 // The starting tiles are dealt privately, so a played word may use letters
 // the public never saw arrive. Each played letter is taken from the known
@@ -29,12 +27,13 @@ export type PublicRack = { known: Map<string, number>; hidden: number };
 export function reconstructRacks(
   results: AuctionResult[],
   plays: WordPlay[],
+  startingRackSize: number,
 ): Map<bigint, PublicRack> {
   const racks = new Map<bigint, PublicRack>();
   const rackOf = (botId: bigint) => {
     let rack = racks.get(botId);
     if (!rack) {
-      rack = { known: new Map(), hidden: STARTING_RACK_SIZE };
+      rack = { known: new Map(), hidden: startingRackSize };
       racks.set(botId, rack);
     }
     return rack;
@@ -80,9 +79,10 @@ export function reconstructRacks(
 export function rackTiles(
   racks: Map<bigint, PublicRack>,
   botId: bigint,
+  startingRackSize: number,
 ): { letters: string[]; hidden: number } {
   const rack = racks.get(botId);
-  if (!rack) return { letters: [], hidden: STARTING_RACK_SIZE };
+  if (!rack) return { letters: [], hidden: startingRackSize };
   const letters: string[] = [];
   for (const [letter, count] of rack.known.entries()) {
     for (let i = 0; i < count; i++) letters.push(letter);

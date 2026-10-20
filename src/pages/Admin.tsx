@@ -29,6 +29,11 @@ export default function Admin() {
       <>
         <PageHeader title="Admin" status={`${admins.length} admins`} />
         <AdminList conn={conn} myHuman={myHuman} />
+        <MatchDefaults
+          // Start over from the saved values when they arrive.
+          key={conn.db.matchmakerConfig.id.find(0) ? "saved" : "built-in"}
+          conn={conn}
+        />
         <RunTournament conn={conn} />
       </>
     );
@@ -161,6 +166,80 @@ function AdminList({
         />
         <button className="button" onClick={addAdmin}>
           Add admin
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </Panel>
+  );
+}
+
+// The module's built-in defaults, used until an admin saves others.
+const BUILT_IN_DEFAULTS = {
+  startingRackSize: 5,
+  lobbyMaxSize: 6,
+  auctionDurationMs: 1000n,
+};
+
+function MatchDefaults({ conn }: { conn: DbConnection }) {
+  const saved = conn.db.matchmakerConfig.id.find(0) ?? BUILT_IN_DEFAULTS;
+  const [auctionMs, setAuctionMs] = useState(Number(saved.auctionDurationMs));
+  const [rackSize, setRackSize] = useState(saved.startingRackSize);
+  const [lobbySize, setLobbySize] = useState(saved.lobbyMaxSize);
+  const [error, run] = useAction();
+
+  const numberField = (
+    label: string,
+    value: number,
+    set: (n: number) => void,
+    min: number,
+    max: number,
+    step = 1,
+  ) => (
+    <div className="row">
+      <span>{label}</span>
+      <input
+        type="number"
+        className="input-num"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => set(Number(e.target.value))}
+      />
+    </div>
+  );
+
+  return (
+    <Panel full title="Match defaults">
+      <p className="secondary">
+        For matches and lobbies from now on, tournament matches included.
+        Matches being played and the open lobby keep the values they started
+        with.
+      </p>
+      {numberField(
+        "Auction length (ms)",
+        auctionMs,
+        setAuctionMs,
+        250,
+        10000,
+        50,
+      )}
+      {numberField("Starting rack size", rackSize, setRackSize, 0, 20)}
+      {numberField("Lobby size", lobbySize, setLobbySize, 2, 12)}
+      <div className="actions">
+        <button
+          className="button"
+          onClick={() =>
+            run(
+              conn.reducers.setMatchmakerConfig({
+                auctionDurationMs: BigInt(auctionMs),
+                startingRackSize: rackSize,
+                lobbyMaxSize: lobbySize,
+              }),
+            )
+          }
+        >
+          Save
         </button>
       </div>
       {error && <p className="error">{error}</p>}

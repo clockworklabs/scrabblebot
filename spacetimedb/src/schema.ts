@@ -277,6 +277,10 @@ export const match_state = table(
     created_at: t.timestamp(),
     started_at: t.option(t.timestamp()),
     ended_at: t.option(t.timestamp()),
+    // The match defaults when it started, so changing them doesn't change
+    // a match being played.
+    auction_duration_ms: t.u64().default(1000n),
+    starting_rack_size: t.u32().default(5),
   }),
 );
 export type Match = Infer<typeof match_state.rowType>;
@@ -497,6 +501,19 @@ export const auction_schedule = table(
 );
 export type AuctionSchedule = Infer<typeof auction_schedule.rowType>;
 
+// Admin-set defaults for new matches and lobbies: one row, id 0. Until an
+// admin saves some, the defaults in game.ts apply.
+export const matchmaker_config = table(
+  { public: true },
+  t.row("MatchmakerConfig", {
+    id: t.u32().primaryKey(),
+    starting_rack_size: t.u32(),
+    lobby_max_size: t.u32(),
+    auction_duration_ms: t.u64(),
+  }),
+);
+export type MatchmakerConfig = Infer<typeof matchmaker_config.rowType>;
+
 // Per-bot aggregate stats across all matches. ELO rating + counters.
 export const bot_stats = table(
   { public: true },
@@ -608,5 +625,6 @@ const spacetimedb = schema({
   tournament,
   tournament_entry,
   tournament_match,
+  matchmaker_config,
 });
 export default spacetimedb;

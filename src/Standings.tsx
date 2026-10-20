@@ -24,10 +24,13 @@ export function Standings({
   botName,
   now,
   limit,
+  startingRackSize,
 }: {
   // Highest score first.
   participants: MatchParticipant[];
   racks: Map<bigint, PublicRack>;
+  // How many face-down tiles each bot was dealt (the match's own setting).
+  startingRackSize: number;
   plays: WordPlay[];
   botName: BotNames;
   now: number;
@@ -61,7 +64,10 @@ export function Standings({
               <span className="st-rank">{rankOf(p)}</span>
               <div className="st-who">
                 <span className="st-name">{botName(p.botId)}</span>
-                <Rack {...rackTiles(racks, p.botId)} className="st-rack" />
+                <Rack
+                  {...rackTiles(racks, p.botId, startingRackSize)}
+                  className="st-rack"
+                />
               </div>
               <div className="st-score">
                 <span className="st-points">{String(p.score)}</span>

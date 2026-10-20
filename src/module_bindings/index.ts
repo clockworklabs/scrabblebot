@@ -52,6 +52,7 @@ import PromoteToOwnerReducer from "./promote_to_owner_reducer";
 import RegisterForTournamentReducer from "./register_for_tournament_reducer";
 import RegisterSimBotsReducer from "./register_sim_bots_reducer";
 import RemoveAdminReducer from "./remove_admin_reducer";
+import SetMatchmakerConfigReducer from "./set_matchmaker_config_reducer";
 import SpawnSimulatedBotReducer from "./spawn_simulated_bot_reducer";
 import StartNextFinalsMatchReducer from "./start_next_finals_match_reducer";
 import StartTournamentReducer from "./start_tournament_reducer";
@@ -74,6 +75,7 @@ import LobbyRow from "./lobby_table";
 import LobbyMemberRow from "./lobby_member_table";
 import MatchParticipantRow from "./match_participant_table";
 import MatchStateRow from "./match_state_table";
+import MatchmakerConfigRow from "./matchmaker_config_table";
 import MyAdminRow from "./my_admin_table";
 import MyNoncesRow from "./my_nonces_table";
 import MyRackRow from "./my_rack_table";
@@ -407,6 +409,27 @@ const tablesSchema = __schema({
     },
     MatchStateRow,
   ),
+  matchmakerConfig: __table(
+    {
+      name: "matchmaker_config",
+      indexes: [
+        {
+          accessor: "id",
+          name: "matchmaker_config_id_idx_btree",
+          algorithm: "btree",
+          columns: ["id"],
+        },
+      ],
+      constraints: [
+        {
+          name: "matchmaker_config_id_key",
+          constraint: "unique",
+          columns: ["id"],
+        },
+      ],
+    },
+    MatchmakerConfigRow,
+  ),
   team: __table(
     {
       name: "team",
@@ -639,6 +662,7 @@ const reducersSchema = __reducers(
   __reducerSchema("register_for_tournament", RegisterForTournamentReducer),
   __reducerSchema("register_sim_bots", RegisterSimBotsReducer),
   __reducerSchema("remove_admin", RemoveAdminReducer),
+  __reducerSchema("set_matchmaker_config", SetMatchmakerConfigReducer),
   __reducerSchema("spawn_simulated_bot", SpawnSimulatedBotReducer),
   __reducerSchema("start_next_finals_match", StartNextFinalsMatchReducer),
   __reducerSchema("start_tournament", StartTournamentReducer),
@@ -698,6 +722,11 @@ type __SchemaWithTableAccessorAliases = Omit<
       (typeof tablesSchema.schemaType.tables)["matchState"],
       "accessorName"
     > & { readonly accessorName: "match_state" };
+    /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
+    readonly matchmaker_config: Omit<
+      (typeof tablesSchema.schemaType.tables)["matchmakerConfig"],
+      "accessorName"
+    > & { readonly accessorName: "matchmaker_config" };
     /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
     readonly team_member: Omit<
       (typeof tablesSchema.schemaType.tables)["teamMember"],
@@ -770,6 +799,7 @@ const tableAccessorAliases = {
   lobby_member: "lobbyMember",
   match_participant: "matchParticipant",
   match_state: "matchState",
+  matchmaker_config: "matchmakerConfig",
   team_member: "teamMember",
   tournament_entry: "tournamentEntry",
   tournament_match: "tournamentMatch",
@@ -821,6 +851,8 @@ export type DbView = __DbViewBase & {
   readonly match_participant: __DbViewBase["matchParticipant"];
   /** @deprecated Use `matchState` instead. This alias will be removed in the next major version. */
   readonly match_state: __DbViewBase["matchState"];
+  /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
+  readonly matchmaker_config: __DbViewBase["matchmakerConfig"];
   /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
   readonly team_member: __DbViewBase["teamMember"];
   /** @deprecated Use `tournamentEntry` instead. This alias will be removed in the next major version. */
@@ -859,6 +891,8 @@ export type Tables = __TablesBase & {
   readonly match_participant: __TablesBase["matchParticipant"];
   /** @deprecated Use `matchState` instead. This alias will be removed in the next major version. */
   readonly match_state: __TablesBase["matchState"];
+  /** @deprecated Use `matchmakerConfig` instead. This alias will be removed in the next major version. */
+  readonly matchmaker_config: __TablesBase["matchmakerConfig"];
   /** @deprecated Use `teamMember` instead. This alias will be removed in the next major version. */
   readonly team_member: __TablesBase["teamMember"];
   /** @deprecated Use `tournamentEntry` instead. This alias will be removed in the next major version. */

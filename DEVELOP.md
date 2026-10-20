@@ -118,6 +118,17 @@ auction, and on bag empty calls `onMatchEnded(match_id)`.
 2. **Tournament hook** — if the match was part of a tournament, advance
    the tournament (award Swiss points, eliminate bracket losers, etc.).
 
+## Match defaults
+
+The auction length, starting rack size and lobby size come from the
+single `matchmaker_config` row (id 0) once an admin has saved one with
+`set_matchmaker_config`, and from the constants in `game.ts` until then.
+Each match copies the auction length and rack size into its own row when
+it starts (`auction_duration_ms`, `starting_rack_size`), and each lobby
+its `max_size` when it opens, so changing the defaults never changes a
+match or lobby already under way. The spectator UI reads a match's
+`startingRackSize` to count its face-down tiles.
+
 ## Tournament
 
 An admin creates a tournament with `create_tournament`, which opens it
@@ -220,6 +231,7 @@ assume the caller already *is* the human.
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
 | `create_tournament(...)` / `start_tournament(id)` / `cancel_tournament(id)` / `register_sim_bots(id)` | Admin | |
 | `start_next_finals_match(id)` | Admin | One finals match at a time |
+| `set_matchmaker_config(rack, lobby, auction_ms)` | Admin | Defaults for new matches and lobbies |
 | `force_end_tournament(id)` | Admin | Stops a tournament under way: status `ForceEnded`, no champion |
 | `register_for_tournament(id)` / `unregister_from_tournament(id)` | Bot credential | Only while the tournament is in `Registration` |
 | `auction_tick` / `lobby_timeout_tick` | Scheduler only | `requireScheduler` rejects any client caller |

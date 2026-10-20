@@ -87,6 +87,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           c.db.tournament,
           c.db.tournamentEntry,
           c.db.tournamentMatch,
+          c.db.matchmakerConfig,
           c.db.team,
           c.db.teamMember,
           c.db.botCredential,

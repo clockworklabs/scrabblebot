@@ -1,6 +1,7 @@
 import { Identity, ScheduleAt } from "spacetimedb";
 import { SenderError, t } from "spacetimedb/server";
 import { isValidWord } from "./dictionary";
+import { BAG_SIZE } from "./letters";
 import {
   afterSeconds,
   botInRunningMatch,
@@ -580,6 +581,49 @@ export const backfill_top_bid_archive = spacetimedb.reducer(
       }
     }
     console.info(`backfill_top_bid_archive moved ${moved} rows`);
+  },
+);
+
+// ---------- Match defaults ----------
+
+// Sets the auction length, starting rack size and lobby size for matches
+// and lobbies created from now on. Matches being played keep the values
+// they started with, and so does the open lobby.
+export const set_matchmaker_config = spacetimedb.reducer(
+  {
+    starting_rack_size: t.u32(),
+    lobby_max_size: t.u32(),
+    auction_duration_ms: t.u64(),
+  },
+  (ctx, { starting_rack_size, lobby_max_size, auction_duration_ms }) => {
+    requireAdmin(ctx);
+    if (starting_rack_size > 20) {
+      throw new SenderError("Starting rack size must be 0-20");
+    }
+    if (lobby_max_size < 2 || lobby_max_size > 12) {
+      throw new SenderError("Lobby size must be 2-12");
+    }
+    if (auction_duration_ms < 250n || auction_duration_ms > 10_000n) {
+      throw new SenderError("Auction length must be 250-10000 ms");
+    }
+    // A full lobby's racks, plus a tile for the first auction, must fit in
+    // the bag.
+    if (lobby_max_size * starting_rack_size >= BAG_SIZE) {
+      throw new SenderError(
+        `A full lobby would be dealt more tiles than the bag's ${BAG_SIZE}`,
+      );
+    }
+    const row = {
+      id: 0,
+      starting_rack_size,
+      lobby_max_size,
+      auction_duration_ms,
+    };
+    if (ctx.db.matchmaker_config.id.find(0)) {
+      ctx.db.matchmaker_config.id.update(row);
+    } else {
+      ctx.db.matchmaker_config.insert(row);
+    }
   },
 );
 

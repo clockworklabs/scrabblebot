@@ -201,6 +201,8 @@ export const Match = __t.object("Match", {
   createdAt: __t.timestamp(),
   startedAt: __t.option(__t.timestamp()),
   endedAt: __t.option(__t.timestamp()),
+  auctionDurationMs: __t.u64(),
+  startingRackSize: __t.u32(),
 });
 export type Match = __Infer<typeof Match>;
 
@@ -220,6 +222,14 @@ export const MatchStatus = __t.enum("MatchStatus", {
   Ended: __t.unit(),
 });
 export type MatchStatus = __Infer<typeof MatchStatus>;
+
+export const MatchmakerConfig = __t.object("MatchmakerConfig", {
+  id: __t.u32(),
+  startingRackSize: __t.u32(),
+  lobbyMaxSize: __t.u32(),
+  auctionDurationMs: __t.u64(),
+});
+export type MatchmakerConfig = __Infer<typeof MatchmakerConfig>;
 
 export const MyAdmin = __t.object("MyAdmin", {});
 export type MyAdmin = __Infer<typeof MyAdmin>;

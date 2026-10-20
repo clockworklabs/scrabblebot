@@ -395,10 +395,12 @@ function LiveStandings({
 }) {
   const participants = standingsByMatch(conn).get(matchId) ?? [];
   const { results, plays } = matchHistory(conn, matchId);
+  const rackSize = conn.db.matchState.id.find(matchId)?.startingRackSize ?? 0;
   return (
     <Standings
       participants={participants}
-      racks={reconstructRacks(results, plays)}
+      racks={reconstructRacks(results, plays, rackSize)}
+      startingRackSize={rackSize}
       plays={plays}
       botName={botName}
       now={Date.now()}
