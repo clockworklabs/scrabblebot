@@ -22,7 +22,6 @@ import {
   resolveHumanView,
   resolveLobby,
   SEED_ADMIN_HEX,
-  startSwissRound,
   updateEloAtMatchEnd,
 } from "./game";
 import { identityFromClaims } from "./identity";
@@ -39,6 +38,7 @@ import spacetimedb, {
   auction_top_bid,
 } from "./schema";
 import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
+import { startSwissRound } from "./tournament";
 
 export default spacetimedb;
 

@@ -1,7 +1,7 @@
 // Tournaments: Swiss rounds, then a bracket, then a best-of-3 final.
 
 import { expect, test } from "vitest";
-import { tableSizes } from "../game";
+import { tableSizes } from "../tournament";
 import { spawn_simulated_bot, start_tournament } from "../index";
 import type {
   MatchParticipant,
