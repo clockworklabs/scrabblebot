@@ -10,15 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-import {
-  AuctionType,
-} from "./types";
-
 export default {
-  swissRoundsTotal: __t.u32(),
-  topCut: __t.u32(),
-  matchSize: __t.u32(),
-  get auctionType() {
-    return AuctionType;
-  },
+  tournamentId: __t.u64(),
 };

@@ -20,6 +20,9 @@ import {
   remove_admin,
   spawn_simulated_bot,
   start_tournament,
+  create_tournament,
+  cancel_tournament,
+  register_sim_bots,
 } from "../index";
 import type { BotStrategy } from "../schema";
 import {
@@ -227,15 +230,27 @@ test("admin_reducers_reject_non_admins", () => {
       ),
     ],
     [
-      "start_tournament",
+      "create_tournament",
       eve((tx) =>
-        start_tournament(tx, {
+        create_tournament(tx, {
           swiss_rounds_total: 1,
           top_cut: 2,
           match_size: 2,
           auction_type: { tag: "Vickrey" },
         }),
       ),
+    ],
+    [
+      "start_tournament",
+      eve((tx) => start_tournament(tx, { tournament_id: 1n })),
+    ],
+    [
+      "cancel_tournament",
+      eve((tx) => cancel_tournament(tx, { tournament_id: 1n })),
+    ],
+    [
+      "register_sim_bots",
+      eve((tx) => register_sim_bots(tx, { tournament_id: 1n })),
     ],
     ["backfill_elo", eve((tx) => backfill_elo(tx, {}))],
     [

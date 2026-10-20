@@ -12,6 +12,10 @@
 // Subsequent runs:
 //   `npm start`  -- uses the saved token.
 //
+// Entering a tournament: `TOURNAMENT_ID=<id> npm start` registers the bot
+// for that tournament when it connects. Only the bot itself can register,
+// so this has to come from the bot's process.
+//
 // Edit ./src/strategy.ts to customise how your bot bids and plays words.
 
 import {
@@ -28,6 +32,7 @@ const HOST = process.env.STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = process.env.STDB_DB ?? "scrabblebot";
 const BOT_NAME = process.env.BOT_NAME ?? "bot";
 const BOT_NONCE = process.env.BOT_NONCE; // only used on first run
+const TOURNAMENT_ID = process.env.TOURNAMENT_ID;
 const TOKEN_PATH = path.join(process.cwd(), `.token-${BOT_NAME}`);
 
 function loadToken(): string | undefined {
@@ -261,6 +266,14 @@ function joinLobby(conn: DbConnection) {
 }
 
 function bootstrapActivity(conn: DbConnection) {
+  if (TOURNAMENT_ID) {
+    conn.reducers
+      .registerForTournament({ tournamentId: BigInt(TOURNAMENT_ID) })
+      .then(() =>
+        console.log(`[${BOT_NAME}] registered for tournament ${TOURNAMENT_ID}`),
+      )
+      .catch(logFailure(`registering for tournament ${TOURNAMENT_ID}`));
+  }
   joinLobby(conn);
   for (const a of conn.db.auction.iter()) {
     if (a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter);

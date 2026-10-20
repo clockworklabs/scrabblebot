@@ -5,6 +5,7 @@ import type {
   Auction,
   AuctionResult,
   MatchParticipant,
+  TournamentEntry,
   WordPlay,
 } from "./module_bindings/types";
 
@@ -95,4 +96,31 @@ export function myTeam(conn: DbConnection | null) {
 
 export function amAdmin(conn: DbConnection | null): boolean {
   return !!conn?.db.myAdmin.iter().next().value;
+}
+
+// The newest tournament, which is the one the pages show.
+export function latestTournament(conn: DbConnection | null) {
+  if (!conn) return null;
+  let latest = null;
+  for (const t of conn.db.tournament.iter()) {
+    if (!latest || t.id > latest.id) latest = t;
+  }
+  return latest;
+}
+
+export function tournamentEntries(
+  conn: DbConnection,
+  tournamentId: bigint,
+): TournamentEntry[] {
+  return [...conn.db.tournamentEntry.iter()].filter(
+    (e) => e.tournamentId === tournamentId,
+  );
+}
+
+// Whether any of the bot's credentials is connected right now.
+export function botConnected(conn: DbConnection, botId: bigint): boolean {
+  for (const c of conn.db.botCredential.iter()) {
+    if (c.botId === botId && c.connected) return true;
+  }
+  return false;
 }

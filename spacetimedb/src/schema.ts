@@ -22,12 +22,14 @@ export const BotStrategy = t.enum("BotStrategy", [
 ]);
 export type BotStrategy = Infer<typeof BotStrategy>;
 
+// New variants go at the end, so existing rows keep their meaning.
 export const TournamentStatus = t.enum("TournamentStatus", [
-  "Lobby",
+  "Lobby", // unused
   "Swiss",
   "Bracket",
   "Final",
   "Ended",
+  "Registration", // created; bots are signing up
 ]);
 export type TournamentStatus = Infer<typeof TournamentStatus>;
 

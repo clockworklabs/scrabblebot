@@ -38,19 +38,24 @@ import AddAdminReducer from "./add_admin_reducer";
 import BackfillEloReducer from "./backfill_elo_reducer";
 import BackfillTopBidArchiveReducer from "./backfill_top_bid_archive_reducer";
 import BootstrapAdminReducer from "./bootstrap_admin_reducer";
+import CancelTournamentReducer from "./cancel_tournament_reducer";
 import ClaimCredentialReducer from "./claim_credential_reducer";
 import ConnectIdReducer from "./connect_id_reducer";
 import CreateTeamReducer from "./create_team_reducer";
+import CreateTournamentReducer from "./create_tournament_reducer";
 import JoinLobbyReducer from "./join_lobby_reducer";
 import JoinTeamReducer from "./join_team_reducer";
 import LeaveTeamReducer from "./leave_team_reducer";
 import MintCredentialNonceReducer from "./mint_credential_nonce_reducer";
 import PromoteToOwnerReducer from "./promote_to_owner_reducer";
+import RegisterForTournamentReducer from "./register_for_tournament_reducer";
+import RegisterSimBotsReducer from "./register_sim_bots_reducer";
 import RemoveAdminReducer from "./remove_admin_reducer";
 import SpawnSimulatedBotReducer from "./spawn_simulated_bot_reducer";
 import StartTournamentReducer from "./start_tournament_reducer";
 import SubmitBidReducer from "./submit_bid_reducer";
 import SubmitWordReducer from "./submit_word_reducer";
+import UnregisterFromTournamentReducer from "./unregister_from_tournament_reducer";
 
 // Import all procedure arg schemas
 
@@ -618,19 +623,27 @@ const reducersSchema = __reducers(
   __reducerSchema("backfill_elo", BackfillEloReducer),
   __reducerSchema("backfill_top_bid_archive", BackfillTopBidArchiveReducer),
   __reducerSchema("bootstrap_admin", BootstrapAdminReducer),
+  __reducerSchema("cancel_tournament", CancelTournamentReducer),
   __reducerSchema("claim_credential", ClaimCredentialReducer),
   __reducerSchema("connect_id", ConnectIdReducer),
   __reducerSchema("create_team", CreateTeamReducer),
+  __reducerSchema("create_tournament", CreateTournamentReducer),
   __reducerSchema("join_lobby", JoinLobbyReducer),
   __reducerSchema("join_team", JoinTeamReducer),
   __reducerSchema("leave_team", LeaveTeamReducer),
   __reducerSchema("mint_credential_nonce", MintCredentialNonceReducer),
   __reducerSchema("promote_to_owner", PromoteToOwnerReducer),
+  __reducerSchema("register_for_tournament", RegisterForTournamentReducer),
+  __reducerSchema("register_sim_bots", RegisterSimBotsReducer),
   __reducerSchema("remove_admin", RemoveAdminReducer),
   __reducerSchema("spawn_simulated_bot", SpawnSimulatedBotReducer),
   __reducerSchema("start_tournament", StartTournamentReducer),
   __reducerSchema("submit_bid", SubmitBidReducer),
   __reducerSchema("submit_word", SubmitWordReducer),
+  __reducerSchema(
+    "unregister_from_tournament",
+    UnregisterFromTournamentReducer,
+  ),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

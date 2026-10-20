@@ -1,5 +1,5 @@
 // Page furniture shared across pages.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Identity } from "spacetimedb";
 import { BAG_SIZE } from "./util";
 
@@ -80,4 +80,15 @@ export function ShortIdentity({ identity }: { identity: Identity }) {
       {hex.slice(0, 16)}…
     </code>
   );
+}
+
+// Runs reducer calls from buttons and keeps the last refusal to show, since
+// a call that the module refuses rejects its promise.
+export function useAction(): [string | null, (call: Promise<unknown>) => void] {
+  const [error, setError] = useState<string | null>(null);
+  const run = (call: Promise<unknown>) => {
+    setError(null);
+    call.catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  };
+  return [error, run];
 }

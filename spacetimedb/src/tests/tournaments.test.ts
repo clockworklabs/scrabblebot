@@ -2,7 +2,12 @@
 
 import { expect, test } from "vitest";
 import { tableSizes } from "../tournament";
-import { spawn_simulated_bot, start_tournament } from "../index";
+import {
+  create_tournament,
+  register_sim_bots,
+  spawn_simulated_bot,
+  start_tournament,
+} from "../index";
 import type {
   MatchParticipant,
   Tournament,
@@ -22,9 +27,14 @@ import {
   type Test,
 } from "./harness";
 
-function start(db: Test, rounds: number, topCut: number, size: number): bigint {
+function create(
+  db: Test,
+  rounds: number,
+  topCut: number,
+  size: number,
+): bigint {
   call(db, "admin", (tx) =>
-    start_tournament(tx, {
+    create_tournament(tx, {
       swiss_rounds_total: rounds,
       top_cut: topCut,
       match_size: size,
@@ -34,6 +44,14 @@ function start(db: Test, rounds: number, topCut: number, size: number): bigint {
   return [...db.db.tournament.iter()]
     .map((t) => t.id)
     .reduce((a, b) => (a > b ? a : b));
+}
+
+/** Create a tournament, enter every sim bot and start it. */
+function start(db: Test, rounds: number, topCut: number, size: number): bigint {
+  const t = create(db, rounds, topCut, size);
+  call(db, "admin", (tx) => register_sim_bots(tx, { tournament_id: t }));
+  call(db, "admin", (tx) => start_tournament(tx, { tournament_id: t }));
+  return t;
 }
 
 function adminDb(): Test {
@@ -103,17 +121,25 @@ function pointsByPlacing(db: Test, t: bigint, matchId: bigint): number[] {
   );
 }
 
-test("start_tournament_validates_its_settings", () => {
+test("create_tournament_validates_its_settings", () => {
   const db = adminDb();
-  expect(failure(() => start(db, 1, 2, 1))).toBe(
+  expect(failure(() => create(db, 1, 2, 1))).toBe(
     "Tournament match_size must be >= 2",
   );
-  expect(failure(() => start(db, 0, 2, 2))).toBe("Need at least 1 Swiss round");
-  expect(failure(() => start(db, 1, 1, 2))).toBe("top_cut must be >= 2");
+  expect(failure(() => create(db, 0, 2, 2))).toBe(
+    "Need at least 1 Swiss round",
+  );
+  expect(failure(() => create(db, 1, 1, 2))).toBe("top_cut must be >= 2");
+  expect(db.db.tournament.count()).toBe(0n);
+});
+
+test("starting_needs_enough_entrants", () => {
+  const db = adminDb();
   expect(failure(() => start(db, 1, 2, 7))).toBe(
     "Need at least 7 registered bots to start",
   );
-  expect(db.db.tournament.count()).toBe(0n);
+  const t = [...db.db.tournament.iter()][0]!;
+  expect(t.status.tag, "still taking registrations").toBe("Registration");
 });
 
 test("starting_enters_every_bot_and_pairs_round_one", () => {

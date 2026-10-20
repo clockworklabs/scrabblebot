@@ -3,9 +3,16 @@ import { Link } from "react-router-dom";
 import { Identity } from "spacetimedb";
 import { useConn } from "../connection";
 import type { DbConnection } from "../module_bindings";
-import { amAdmin, humanLinkOf } from "../data";
+import type { Tournament } from "../module_bindings/types";
+import {
+  amAdmin,
+  botConnected,
+  humanLinkOf,
+  latestTournament,
+  tournamentEntries,
+} from "../data";
 import { fmtDateTime } from "../util";
-import { PageHeader, Panel, ShortIdentity } from "../ui";
+import { PageHeader, Panel, ShortIdentity, useAction } from "../ui";
 
 type AuctionTypeTag = "Vickrey" | "FirstPrice";
 
@@ -21,7 +28,7 @@ export default function Admin() {
       <>
         <PageHeader title="Admin" status={`${admins.length} admins`} />
         <AdminList conn={conn} myHuman={myHuman} />
-        <StartTournament conn={conn} />
+        <RunTournament conn={conn} />
       </>
     );
   }
@@ -160,11 +167,20 @@ function AdminList({
   );
 }
 
-function StartTournament({ conn }: { conn: DbConnection }) {
+function RunTournament({ conn }: { conn: DbConnection }) {
+  const current = latestTournament(conn);
+  if (current && current.status.tag === "Registration") {
+    return <Registration conn={conn} tournament={current} />;
+  }
+  return <CreateTournament conn={conn} />;
+}
+
+function CreateTournament({ conn }: { conn: DbConnection }) {
   const [auctionType, setAuctionType] = useState<AuctionTypeTag>("Vickrey");
   const [swissRounds, setSwissRounds] = useState(4);
   const [topCut, setTopCut] = useState(8);
   const [matchSize, setMatchSize] = useState(4);
+  const [error, run] = useAction();
 
   const numberField = (
     label: string,
@@ -189,8 +205,9 @@ function StartTournament({ conn }: { conn: DbConnection }) {
   return (
     <Panel full title="Run a tournament">
       <p className="secondary">
-        Swiss rounds, then a single-elimination bracket cut to the top-N. Uses
-        every currently-registered bot.
+        Swiss rounds, then a single-elimination bracket cut to the top-N.
+        Creating a tournament opens it for registration; bots sign up from their
+        own processes, and you start it once enough have.
       </p>
       <div className="row">
         <span>Auction type</span>
@@ -210,17 +227,64 @@ function StartTournament({ conn }: { conn: DbConnection }) {
         <button
           className="button"
           onClick={() =>
-            conn.reducers.startTournament({
-              swissRoundsTotal: swissRounds,
-              topCut,
-              matchSize,
-              auctionType: { tag: auctionType },
-            })
+            run(
+              conn.reducers.createTournament({
+                swissRoundsTotal: swissRounds,
+                topCut,
+                matchSize,
+                auctionType: { tag: auctionType },
+              }),
+            )
           }
+        >
+          Open registration
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </Panel>
+  );
+}
+
+function Registration({
+  conn,
+  tournament,
+}: {
+  conn: DbConnection;
+  tournament: Tournament;
+}) {
+  const [error, run] = useAction();
+  const entries = tournamentEntries(conn, tournament.id);
+  const connected = entries.filter((e) => botConnected(conn, e.botId)).length;
+  const tournamentId = tournament.id;
+
+  return (
+    <Panel full title={`Tournament #${tournament.id}: registration`}>
+      <p>
+        {entries.length} bots registered, {connected} connected. Matches seat{" "}
+        {tournament.matchSize} bots, so it needs at least that many to start.{" "}
+        <Link to="/tournament">See who's in</Link>.
+      </p>
+      <div className="actions">
+        <button
+          className="button"
+          onClick={() => run(conn.reducers.startTournament({ tournamentId }))}
         >
           Start tournament
         </button>
+        <button
+          className="button quiet"
+          onClick={() => run(conn.reducers.registerSimBots({ tournamentId }))}
+        >
+          Enter the sim bots
+        </button>
+        <button
+          className="button quiet"
+          onClick={() => run(conn.reducers.cancelTournament({ tournamentId }))}
+        >
+          Cancel tournament
+        </button>
       </div>
+      {error && <p className="error">{error}</p>}
     </Panel>
   );
 }

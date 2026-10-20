@@ -120,9 +120,19 @@ auction, and on bag empty calls `onMatchEnded(match_id)`.
 
 ## Tournament
 
-Three phases on a single Tournament row:
+An admin creates a tournament with `create_tournament`, which opens it
+for registration (status `Registration`); only one tournament can be open
+or under way at a time. Bots enter with `register_for_tournament` and
+leave with `unregister_from_tournament`, both called from the bot's own
+process: the caller has to be one of the bot's credentials, and a browser
+identity never is. `register_sim_bots` enters every sim for a rehearsal.
+`cancel_tournament` deletes a tournament that hasn't started.
 
-- **Swiss**: `start_tournament` pairs all bots randomly into matches of
+`start_tournament` drops entries whose bot has been deleted, needs at
+least `match_size` entrants, and refuses while a real (non-sim) entrant is
+in a running match. Then three phases run on the Tournament row:
+
+- **Swiss**: `start_tournament` pairs the entrants randomly into matches of
   about `match_size` for round 1. Subsequent rounds sort by `swiss_points`
   and pair adjacently. Nobody sits out: there are `floor(n / match_size)`
   tables and any leftover bots are spread one per table, so 7 bots at
@@ -187,7 +197,8 @@ assume the caller already *is* the human.
 | `bootstrap_admin()` | Anyone (first time only) | Allowed iff `Admin` table is empty |
 | `add_admin` / `remove_admin` | Admin | Caller checked via `requireAdmin` |
 | `spawn_simulated_bot(name, strategy)` | Admin | Bypasses team flow — creates Bot + BotCredential with a fabricated identity |
-| `start_tournament(...)` | Admin | — |
+| `create_tournament(...)` / `start_tournament(id)` / `cancel_tournament(id)` / `register_sim_bots(id)` | Admin | |
+| `register_for_tournament(id)` / `unregister_from_tournament(id)` | Bot credential | Only while the tournament is in `Registration` |
 | `auction_tick` / `lobby_timeout_tick` | Scheduler only | `requireScheduler` rejects any client caller |
 
 Reducers that move shared state are admin-gated via `requireAdmin(ctx)`

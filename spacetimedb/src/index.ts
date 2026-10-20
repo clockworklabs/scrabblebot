@@ -38,7 +38,13 @@ import spacetimedb, {
   auction_top_bid,
 } from "./schema";
 import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
-import { startSwissRound } from "./tournament";
+import {
+  addEntry,
+  entryFor,
+  isActive,
+  requireRegistration,
+  startSwissRound,
+} from "./tournament";
 
 export default spacetimedb;
 
@@ -700,7 +706,9 @@ export const lobby_timeout_tick = spacetimedb.reducer(
 
 // ---------- Tournament ----------
 
-export const start_tournament = spacetimedb.reducer(
+// An admin creates a tournament, bots register for it from their own
+// processes, and the admin starts it once enough have signed up.
+export const create_tournament = spacetimedb.reducer(
   {
     swiss_rounds_total: t.u32(),
     top_cut: t.u32(),
@@ -718,15 +726,12 @@ export const start_tournament = spacetimedb.reducer(
     if (top_cut < 2) {
       throw new SenderError("top_cut must be >= 2");
     }
-    const bots = [...ctx.db.bot.iter()].map((b) => b.id);
-    if (bots.length < match_size) {
-      throw new SenderError(
-        `Need at least ${match_size} registered bots to start`,
-      );
+    if ([...ctx.db.tournament.iter()].some(isActive)) {
+      throw new SenderError("Another tournament is already in progress");
     }
     const tour = ctx.db.tournament.insert({
       id: 0n,
-      status: { tag: "Swiss" },
+      status: { tag: "Registration" },
       swiss_rounds_total,
       current_round: 0,
       top_cut,
@@ -735,16 +740,125 @@ export const start_tournament = spacetimedb.reducer(
       created_at: ctx.timestamp,
       ended_at: undefined,
     });
-    for (const bot_id of bots) {
-      ctx.db.tournament_entry.insert({
-        id: 0n,
-        tournament_id: tour.id,
-        bot_id,
-        swiss_points: 0,
-        eliminated: false,
-      });
+    console.info(`Tournament ${tour.id} created; registration open`);
+  },
+);
+
+// Called by a bot's own process: the caller must be one of the bot's
+// credentials, which a browser identity never is.
+export const register_for_tournament = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    const bot_id = callerBotId(ctx);
+    if (bot_id === undefined) {
+      throw new SenderError("Your identity is not a credential for any bot");
     }
-    orThrow(startSwissRound(ctx, tour.id, 1));
+    requireRegistration(ctx, tournament_id);
+    if (entryFor(ctx, tournament_id, bot_id)) {
+      return; // idempotent
+    }
+    addEntry(ctx, tournament_id, bot_id);
+    console.info(`Bot ${bot_id} registered for tournament ${tournament_id}`);
+  },
+);
+
+export const unregister_from_tournament = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    const bot_id = callerBotId(ctx);
+    if (bot_id === undefined) {
+      throw new SenderError("Your identity is not a credential for any bot");
+    }
+    requireRegistration(ctx, tournament_id);
+    const entry = entryFor(ctx, tournament_id, bot_id);
+    if (entry) {
+      ctx.db.tournament_entry.id.delete(entry.id);
+    }
+  },
+);
+
+// Enters every sim bot, so an admin can fill out the field for a rehearsal
+// or a small event.
+export const register_sim_bots = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    requireAdmin(ctx);
+    requireRegistration(ctx, tournament_id);
+    for (const bot of [...ctx.db.bot.iter()]) {
+      if (bot.is_simulated && !entryFor(ctx, tournament_id, bot.id)) {
+        addEntry(ctx, tournament_id, bot.id);
+      }
+    }
+  },
+);
+
+export const cancel_tournament = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    requireAdmin(ctx);
+    const tour = ctx.db.tournament.id.find(tournament_id);
+    if (!tour) {
+      throw new SenderError("Unknown tournament");
+    }
+    if (tour.status.tag !== "Registration") {
+      throw new SenderError(
+        "Only a tournament that hasn't started can be cancelled",
+      );
+    }
+    for (const e of [
+      ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
+    ]) {
+      ctx.db.tournament_entry.id.delete(e.id);
+    }
+    ctx.db.tournament.id.delete(tournament_id);
+    console.info(`Tournament ${tournament_id} cancelled`);
+  },
+);
+
+export const start_tournament = spacetimedb.reducer(
+  { tournament_id: t.u64() },
+  (ctx, { tournament_id }) => {
+    requireAdmin(ctx);
+    const tour = ctx.db.tournament.id.find(tournament_id);
+    if (!tour) {
+      throw new SenderError("Unknown tournament");
+    }
+    if (tour.status.tag !== "Registration") {
+      throw new SenderError("Tournament has already started");
+    }
+    // A bot deleted since it registered (its team dissolved) can't play.
+    const entries = [];
+    for (const e of [
+      ...ctx.db.tournament_entry.te_by_tournament.filter(tournament_id),
+    ]) {
+      if (ctx.db.bot.id.find(e.bot_id)) {
+        entries.push(e);
+      } else {
+        ctx.db.tournament_entry.id.delete(e.id);
+      }
+    }
+    if (entries.length < tour.match_size) {
+      throw new SenderError(
+        `Need at least ${tour.match_size} registered bots to start`,
+      );
+    }
+    // A real bot can only play one match at a time. (Sim bots are driven
+    // by the module and can play any number at once.)
+    const busy = entries
+      .map((e) => ctx.db.bot.id.find(e.bot_id)!)
+      .filter((b) => !b.is_simulated && botInRunningMatch(ctx, b.id));
+    if (busy.length > 0) {
+      throw new SenderError(
+        `Waiting for these entrants to finish their matches: ${busy
+          .map((b) => b.name)
+          .join(", ")}`,
+      );
+    }
+    ctx.db.tournament.id.update({ ...tour, status: { tag: "Swiss" } });
+    orThrow(startSwissRound(ctx, tournament_id, 1));
+    console.info(
+      `Tournament ${tournament_id} started with ${entries.length} entrants`,
+    );
   },
 );
 

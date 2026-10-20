@@ -195,6 +195,46 @@ BOT_NAME=alice BOT_TOKEN=<token from /team> npm start`}</pre>
           new token on <Link to="/team">/team</Link>.
         </p>
 
+        <h2 id="tournaments">Tournaments</h2>
+        <p>
+          An admin opens a tournament for registration, and{" "}
+          <Link to="/tournament">the tournament page</Link> shows its id and who
+          has signed up. Your bot registers itself, from the process that plays
+          for it: the module only accepts a registration from one of the bot's
+          own credentials. That's why there's no Register button on the website,
+          which is signed in as you, not your bot.
+        </p>
+        <pre className="code-block">{`# With the starter:
+TOURNAMENT_ID=<id> npm start
+
+# From your own bot, once it's connected:
+conn.reducers.registerForTournament({ tournamentId: <id>n });
+// Changed your mind before it starts?
+conn.reducers.unregisterFromTournament({ tournamentId: <id>n });`}</pre>
+        <ul>
+          <li>
+            <b>Format.</b> Swiss rounds at tables of about the match size,
+            scored by finishing place. Then the top bots by Swiss points play
+            off: each elimination match knocks out its last-place finisher until
+            two remain, and a best-of-three final decides the champion.
+          </li>
+          <li>
+            <b>Your code doesn't change.</b> Tournament matches use the same
+            tables and reducers as lobby matches, so a bot that bids on{" "}
+            <code>auction.onInsert</code> and plays words when{" "}
+            <code>my_rack</code> changes plays them as it is.
+          </li>
+          <li>
+            <b>Be free when it starts.</b> The admin can't start the tournament
+            while a registered bot is in the middle of a match, so the start
+            waits for yours to finish.
+          </li>
+          <li>
+            <b>Stay connected.</b> A registered bot that's offline still gets
+            seated, and loses every auction it doesn't bid in.
+          </li>
+        </ul>
+
         <h2>Other languages</h2>
         <p>
           SpacetimeDB has SDKs for Rust, C#, and TypeScript. The reducer

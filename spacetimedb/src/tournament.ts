@@ -6,7 +6,42 @@ import {
   startMatchWith,
 } from "./game";
 import type { Ctx, Result } from "./game";
+import { SenderError } from "spacetimedb/server";
 import type { Tournament, TournamentEntry, TournamentPhase } from "./schema";
+
+// A tournament still to finish: taking registrations or under way. Only one
+// may exist at a time.
+export function isActive(t: Tournament): boolean {
+  switch (t.status.tag) {
+    case "Registration":
+    case "Swiss":
+    case "Bracket":
+    case "Final":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function requireRegistration(ctx: Ctx, tournament_id: bigint) {
+  const t = ctx.db.tournament.id.find(tournament_id);
+  if (!t) {
+    throw new SenderError("Unknown tournament");
+  }
+  if (t.status.tag !== "Registration") {
+    throw new SenderError("Tournament is not taking registrations");
+  }
+}
+
+export function addEntry(ctx: Ctx, tournament_id: bigint, bot_id: bigint) {
+  ctx.db.tournament_entry.insert({
+    id: 0n,
+    tournament_id,
+    bot_id,
+    swiss_points: 0,
+    eliminated: false,
+  });
+}
 
 export function startSwissRound(
   ctx: Ctx,
@@ -69,7 +104,7 @@ export function tableSizes(n: number, matchSize: number): number[] {
   return Array.from({ length: tables }, (_, i) => base + (i < extra ? 1 : 0));
 }
 
-function entryFor(
+export function entryFor(
   ctx: Ctx,
   tournament_id: bigint,
   bot_id: bigint,
