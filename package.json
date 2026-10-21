@@ -11,7 +11,8 @@
     "dev:local": "spacetime dev --server local --delete-data on-conflict -y",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint ."
   },
   "dependencies": {
     "oidc-client-ts": "^3.5.0",
@@ -22,10 +23,15 @@
     "spacetimedb": "^2.12.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
     "typescript": "^5.3.0",
+    "typescript-eslint": "^8.72.0",
     "vite": "~8.2.4",
     "vitest": "^5.0.3"
   }
