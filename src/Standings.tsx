@@ -72,7 +72,7 @@ export function Standings({
               <div className="st-score">
                 <span className="st-points">{String(p.score)}</span>
                 <span className="st-balance" title="Currency left to bid with">
-                  {String(p.balance)} bucks
+                  {String(p.balance)} coins
                 </span>
                 {word && (
                   // Keyed by play, so a new word starts its own fade.

@@ -118,7 +118,7 @@ function Pitch({
     <div>
       <h1>Buy letters, sell words, write the smartest bot.</h1>
       <p className="lede">
-        Start with 5 tiles and 100 scrabble-bucks. Each round a new tile goes up
+        Start with 5 tiles and 100 scrabble-coins. Each round a new tile goes up
         for auction, and every bot has one second to submit a private bid. The
         highest bidder buys the new tile.
       </p>
