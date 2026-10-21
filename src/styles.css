@@ -543,6 +543,17 @@ label {
 .tile-back::before {
   opacity: 0.35;
 }
+.tile-eye {
+  position: relative;
+  width: 80%;
+  height: 80%;
+  fill: none;
+  stroke: color-mix(in srgb, var(--tile-edge-dark) 75%, black);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  /* Pressed into the tile rather than printed on it. */
+  filter: drop-shadow(0 1px 0 rgb(255 255 255 / 0.35));
+}
 .tile-logo {
   position: relative;
   width: 100%;
