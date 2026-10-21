@@ -11,9 +11,7 @@ import {
   ensureSimBot,
   findParticipant,
   generateNonceCode,
-  LOBBY_DURATION_SECONDS,
   NONCE_TTL_SECONDS,
-  openLobbyOrCreate,
   orThrow,
   playWord,
   replaceBid,
@@ -21,11 +19,11 @@ import {
   requireScheduler,
   resolveHuman,
   resolveHumanView,
-  resolveLobby,
   SEED_ADMIN_HEX,
   updateEloAtMatchEnd,
 } from "./game";
 import { identityFromClaims } from "./identity";
+import { openLobbyOrCreate, resolveLobby } from "./lobby";
 import spacetimedb, {
   admin,
   auctionSchedule,
@@ -47,8 +45,10 @@ import {
   heldForTournament,
   isActive,
   isUnderway,
+  onTournamentMatchEnded,
   requireRegistration,
   startFinalsMatch,
+  startRoundOneWhenFree,
   startSwissRound,
 } from "./tournament";
 
@@ -995,6 +995,9 @@ export const auctionTick = spacetimedb.reducer(
   { job: auctionSchedule.rowType },
   (ctx, { job }) => {
     requireScheduler(ctx);
-    closeAuction(ctx, job.matchId);
+    if (closeAuction(ctx, job.matchId)) {
+      onTournamentMatchEnded(ctx, job.matchId);
+      startRoundOneWhenFree(ctx);
+    }
   },
 );
