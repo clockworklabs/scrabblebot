@@ -157,6 +157,13 @@ export const HumanLink = __t.object("HumanLink", {
 });
 export type HumanLink = __Infer<typeof HumanLink>;
 
+export const InviteExpirySchedule = __t.object("InviteExpirySchedule", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  inviteId: __t.u64(),
+});
+export type InviteExpirySchedule = __Infer<typeof InviteExpirySchedule>;
+
 export const Lobby = __t.object("Lobby", {
   id: __t.u64(),
   get status() {
@@ -251,12 +258,21 @@ export type MyRack = __Infer<typeof MyRack>;
 export const MyTeam = __t.object("MyTeam", {});
 export type MyTeam = __Infer<typeof MyTeam>;
 
+export const MyTeamInvites = __t.object("MyTeamInvites", {});
+export type MyTeamInvites = __Infer<typeof MyTeamInvites>;
+
 export const NonceExpirySchedule = __t.object("NonceExpirySchedule", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
   nonceId: __t.u64(),
 });
 export type NonceExpirySchedule = __Infer<typeof NonceExpirySchedule>;
+
+export const OpenLobbies = __t.object("OpenLobbies", {});
+export type OpenLobbies = __Infer<typeof OpenLobbies>;
+
+export const OpenLobbyMembers = __t.object("OpenLobbyMembers", {});
+export type OpenLobbyMembers = __Infer<typeof OpenLobbyMembers>;
 
 export const PendingBid = __t.object("PendingBid", {
   id: __t.u64(),
@@ -297,6 +313,15 @@ export const Team = __t.object("Team", {
   createdAt: __t.timestamp(),
 });
 export type Team = __Infer<typeof Team>;
+
+export const TeamInvite = __t.object("TeamInvite", {
+  id: __t.u64(),
+  code: __t.string(),
+  teamId: __t.u64(),
+  creator: __t.identity(),
+  expiresAt: __t.timestamp(),
+});
+export type TeamInvite = __Infer<typeof TeamInvite>;
 
 export const TeamMember = __t.object("TeamMember", {
   id: __t.u64(),

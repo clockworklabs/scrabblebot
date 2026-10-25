@@ -6,7 +6,6 @@ import { STARTING_RACK_SIZE } from "../game";
 import {
   claimCredential,
   connectId,
-  joinTeam,
   mintCredentialNonce,
   myAdmin,
   myNonces,
@@ -21,6 +20,7 @@ import {
   client,
   currentAuction,
   identity,
+  invite,
   makeAdmin,
   newDb,
   noncesFor,
@@ -58,7 +58,7 @@ test("my rack shows only the callers tiles across matches", () => {
 test("my team summarises the callers team", () => {
   const db = newDb();
   const ann = teamWithBot(db, "alice", "Ann");
-  call(db, "bob", (tx) => joinTeam(tx, { teamName: "Team Ann" }));
+  invite(db, "alice", "bob");
   call(db, "alice", (tx) => mintCredentialNonce(tx, {}));
   const code = noncesFor(db, "alice")[0]!.code;
   call(db, "ann-2", (tx) => claimCredential(tx, { code }));
@@ -90,7 +90,7 @@ test("views resolve a linked browser to its human", () => {
 test("my nonces only shows the callers own", () => {
   const db = newDb();
   teamWithBot(db, "alice", "Ann");
-  call(db, "bob", (tx) => joinTeam(tx, { teamName: "Team Ann" }));
+  invite(db, "alice", "bob");
   call(db, "alice", (tx) => mintCredentialNonce(tx, {}));
   call(db, "bob", (tx) => mintCredentialNonce(tx, {}));
   call(db, "bob", (tx) => mintCredentialNonce(tx, {}));

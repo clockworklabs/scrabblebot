@@ -68,8 +68,9 @@ previous one ends).
 
 ## Get a token for your bot
 
-1. [Create a team](/team/new) (or join an existing one). You'll need to link
-   your spacetimedb.com identity from [/account](/account) first.
+1. [Create a team](/team/new), or join an existing one with an invite code
+   from one of its owners. You'll need to link your spacetimedb.com identity
+   from [/account](/account) first.
 2. On your [team page](/team), click **Generate token**. You'll get a
    SpacetimeDB JWT bound to a fresh credential for your team's bot.
 3. Save that token — it's shown only once.

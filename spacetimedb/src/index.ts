@@ -12,6 +12,7 @@ import {
   ensureSimBot,
   findParticipant,
   generateNonceCode,
+  INVITE_TTL_SECONDS,
   NONCE_TTL_SECONDS,
   orThrow,
   playWord,
@@ -33,10 +34,14 @@ import spacetimedb, {
   BotStrategy,
   credentialNonce,
   holding,
+  inviteExpirySchedule,
+  lobby,
+  lobbyMember,
   lobbyTimeoutSchedule,
   TeamSummary,
   nonceExpirySchedule,
   auctionTopBid,
+  teamInvite,
 } from "./schema";
 import { asciiUppercase, byteLength, isAsciiUppercase, trim } from "./text";
 import {
@@ -131,6 +136,27 @@ export const visibleAuctionTopBids = spacetimedb.view(
   },
 );
 
+// The lobby taking joins and the bots in it. Clients can't filter on the
+// status enum in a subscription, and every lobby ever opened stays in the
+// table, so the site subscribes to these instead of the tables.
+export const openLobbies = spacetimedb.anonymousView(
+  { public: true },
+  t.array(lobby.rowType),
+  (ctx) => [...ctx.db.lobby.lobbyByStatus.filter({ tag: "Open" })],
+);
+
+export const openLobbyMembers = spacetimedb.anonymousView(
+  { public: true },
+  t.array(lobbyMember.rowType),
+  (ctx) => {
+    const out = [];
+    for (const l of ctx.db.lobby.lobbyByStatus.filter({ tag: "Open" })) {
+      out.push(...ctx.db.lobbyMember.lmByLobby.filter(l.id));
+    }
+    return out;
+  },
+);
+
 // Nonces the caller has minted. Private to the caller.
 export const myNonces = spacetimedb.view(
   { public: true },
@@ -138,6 +164,16 @@ export const myNonces = spacetimedb.view(
   (ctx) => {
     const human = resolveHumanView(ctx);
     return [...ctx.db.credentialNonce.nonceByCreator.filter(human)];
+  },
+);
+
+// Team invites the caller has minted. Private to the caller.
+export const myTeamInvites = spacetimedb.view(
+  { public: true },
+  t.array(teamInvite.rowType),
+  (ctx) => {
+    const human = resolveHumanView(ctx);
+    return [...ctx.db.teamInvite.inviteByCreator.filter(human)];
   },
 );
 
@@ -350,13 +386,61 @@ export const createTeam = spacetimedb.reducer(
   },
 );
 
+// An owner mints a single-use invite code for their team. Members can mint
+// bot credentials, so membership has to be granted, not taken: a team name
+// alone isn't enough to join.
+export const mintTeamInvite = spacetimedb.reducer((ctx) => {
+  const human = resolveHuman(ctx);
+  const member = ctx.db.teamMember.user.find(human);
+  if (!member) {
+    throw new SenderError("You're not on a team");
+  }
+  if (member.role.tag !== "Owner") {
+    throw new SenderError("Only owners can invite");
+  }
+  let code = generateNonceCode(ctx, 0);
+  for (let attempt = 1; ctx.db.teamInvite.code.find(code); attempt++) {
+    code = generateNonceCode(ctx, attempt);
+  }
+  const expiresAt = afterSeconds(ctx.timestamp, INVITE_TTL_SECONDS);
+  const invite = ctx.db.teamInvite.insert({
+    id: 0n,
+    code,
+    teamId: member.teamId,
+    creator: human,
+    expiresAt,
+  });
+  ctx.db.inviteExpirySchedule.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(expiresAt.microsSinceUnixEpoch),
+    inviteId: invite.id,
+  });
+  console.info(
+    `Invite minted for team ${member.teamId} (expires in ${INVITE_TTL_SECONDS}s)`,
+  );
+});
+
+// Redeems an invite: the caller joins its team as a Member. The invite is
+// then deleted.
 export const joinTeam = spacetimedb.reducer(
-  { teamName: t.string() },
+  { code: t.string() },
   (ctx, args) => {
-    const teamName = trim(args.teamName);
-    const team = ctx.db.team.name.find(teamName);
-    if (!team) {
-      throw new SenderError("No such team");
+    const invite = ctx.db.teamInvite.code.find(trim(args.code));
+    if (!invite) {
+      throw new SenderError("No such invite");
+    }
+    // Its expiry job may not have run yet.
+    if (
+      ctx.timestamp.microsSinceUnixEpoch >=
+      invite.expiresAt.microsSinceUnixEpoch
+    ) {
+      throw new SenderError("This invite has expired");
+    }
+    // An invite speaks for the owner who minted it, so it lapses once they
+    // leave the team.
+    const creator = ctx.db.teamMember.user.find(invite.creator);
+    if (creator?.teamId !== invite.teamId || creator.role.tag !== "Owner") {
+      throw new SenderError("This invite is no longer valid");
     }
     const human = resolveHuman(ctx);
     if (ctx.db.teamMember.user.find(human) != null) {
@@ -364,12 +448,22 @@ export const joinTeam = spacetimedb.reducer(
     }
     ctx.db.teamMember.insert({
       id: 0n,
-      teamId: team.id,
+      teamId: invite.teamId,
       user: human,
       role: { tag: "Member" },
       joinedAt: ctx.timestamp,
     });
-    console.info(`Human ${human.toHexString()} joined team '${teamName}'`);
+    ctx.db.teamInvite.id.delete(invite.id);
+    console.info(`Human ${human.toHexString()} joined team ${invite.teamId}`);
+  },
+);
+
+export const inviteExpiryTick = spacetimedb.reducer(
+  { onSchedule: inviteExpirySchedule },
+  { job: inviteExpirySchedule.rowType },
+  (ctx, { job }) => {
+    requireScheduler(ctx);
+    ctx.db.teamInvite.id.delete(job.inviteId);
   },
 );
 
@@ -421,6 +515,12 @@ export const leaveTeam = spacetimedb.reducer((ctx) => {
         ctx.db.lobbyMember.id.delete(lid);
       }
       ctx.db.bot.id.delete(bid);
+    }
+    const inviteIds = [...ctx.db.teamInvite.inviteByTeam.filter(teamId)].map(
+      (i) => i.id,
+    );
+    for (const iid of inviteIds) {
+      ctx.db.teamInvite.id.delete(iid);
     }
     ctx.db.team.id.delete(teamId);
     console.info(`Team ${teamId} dissolved (no members left)`);

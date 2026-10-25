@@ -8,6 +8,8 @@ import {
   joinLobby,
   leaveTeam,
   lobbyTimeoutTick,
+  openLobbies,
+  openLobbyMembers,
   registerForTournament,
   registerSimBots,
   startTournament,
@@ -96,6 +98,26 @@ test("a lobby full of real bots starts a match at once", () => {
   const next = openLobby(db);
   expect(next.id).not.toBe(lobby.id);
   expect(members(db, next.id)).toEqual([]);
+});
+
+test("the open lobby views show only the lobby taking joins", () => {
+  const db = newDb();
+  const bots = realBots(db, LOBBY_MAX_SIZE);
+  const first = openLobby(db);
+  for (let i = 0; i < bots.length; i++) {
+    join(db, `Bot${i}`);
+  }
+  const next = openLobby(db);
+  db.withReducerTx(asClaims("sim", "Cheapo-sim"), (tx) => joinLobby(tx, {}));
+
+  const view = db.anonymousViewContext();
+  expect(openLobbies(view).map((l) => l.id)).toEqual([next.id]);
+  const shown = openLobbyMembers(view);
+  expect(shown.every((m) => m.lobbyId === next.id)).toBe(true);
+  expect(shown.map((m) => m.botId)).toEqual(members(db, next.id));
+  expect(members(db, first.id).length, "the full lobby kept its rows").toBe(
+    LOBBY_MAX_SIZE,
+  );
 });
 
 test("sims in the lobby do not count towards filling it", () => {

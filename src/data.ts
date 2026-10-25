@@ -1,6 +1,7 @@
 // Queries over the client cache that more than one page needs.
 import type { Identity } from "spacetimedb";
-import type { DbConnection } from "./module_bindings";
+import { useSubscription } from "./connection";
+import { tables, type DbConnection } from "./module_bindings";
 import type {
   Auction,
   AuctionResult,
@@ -57,6 +58,31 @@ export function botNames(conn: DbConnection | null): BotNames {
     botId === null || botId === undefined
       ? "—"
       : (names.get(botId) ?? `#${botId}`);
+}
+
+// Subscribes to the rows the page shows for each of `matchIds`: the
+// scoreboard, then the words played, then the tile sales and winning bids
+// that the live card and match page replay. Every match ever played stays in
+// these tables, so the site never subscribes to them whole.
+export function useMatchRows(
+  matchIds: bigint[],
+  rows: "scores" | "words" | "history",
+) {
+  useSubscription(
+    matchIds.flatMap((id) => [
+      tables.matchParticipant.where((r) => r.matchId.eq(id)),
+      ...(rows === "scores"
+        ? []
+        : [tables.wordPlay.where((r) => r.matchId.eq(id))]),
+      ...(rows === "history"
+        ? [
+            tables.auction.where((r) => r.matchId.eq(id)),
+            tables.auctionResult.where((r) => r.matchId.eq(id)),
+            tables.auctionTopBidArchive.where((r) => r.matchId.eq(id)),
+          ]
+        : []),
+    ]),
+  );
 }
 
 // Every match's participants, highest score first.

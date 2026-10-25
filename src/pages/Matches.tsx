@@ -6,7 +6,13 @@ import type {
   MatchParticipant,
   WordPlay,
 } from "../module_bindings/types";
-import { bestWords, botNames, standingsByMatch, type BotNames } from "../data";
+import {
+  bestWords,
+  botNames,
+  standingsByMatch,
+  useMatchRows,
+  type BotNames,
+} from "../data";
 import { fmtAgo, fmtTimestamp, matchOutcome } from "../util";
 import { TileWord } from "../Tile";
 import { PageHeader, Panel } from "../ui";
@@ -18,6 +24,11 @@ export default function Matches() {
   const [shown, setShown] = useState(PAGE_SIZE);
   const matches = conn ? [...conn.db.matchState.iter()] : [];
   matches.sort((a, b) => Number(b.id - a.id));
+  const page = matches.slice(0, shown);
+  useMatchRows(
+    page.map((m) => m.id),
+    "words",
+  );
   const standings = standingsByMatch(conn);
   const best = bestWords(conn);
   const botName = botNames(conn);
@@ -42,7 +53,7 @@ export default function Matches() {
             </tr>
           </thead>
           <tbody>
-            {matches.slice(0, shown).map((m) => (
+            {page.map((m) => (
               <MatchRow
                 key={String(m.id)}
                 match={m}

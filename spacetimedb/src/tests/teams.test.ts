@@ -2,17 +2,23 @@
 
 import { ScheduleAt } from "spacetimedb";
 import { expect, test } from "vitest";
-import { afterSeconds, NONCE_TTL_SECONDS } from "../game";
+import { afterSeconds, INVITE_TTL_SECONDS, NONCE_TTL_SECONDS } from "../game";
 import {
   claimCredential,
   createTeam,
+  inviteExpiryTick,
   joinTeam,
   leaveTeam,
   mintCredentialNonce,
+  mintTeamInvite,
   nonceExpiryTick,
   promoteToOwner,
 } from "../index";
-import type { NonceExpirySchedule, TeamMember } from "../schema";
+import type {
+  InviteExpirySchedule,
+  NonceExpirySchedule,
+  TeamMember,
+} from "../schema";
 import {
   botNamed,
   byBigint,
@@ -20,6 +26,8 @@ import {
   failure,
   identity,
   internal,
+  invite,
+  invitesFor,
   newDb,
   noncesFor,
   now,
@@ -40,8 +48,10 @@ const mint = (db: Test, who: string) =>
   call(db, who, (tx) => mintCredentialNonce(tx, {}));
 const claim = (db: Test, who: string, code: string) =>
   call(db, who, (tx) => claimCredential(tx, { code }));
-const join = (db: Test, who: string, team: string) =>
-  call(db, who, (tx) => joinTeam(tx, { teamName: team }));
+const mintInvite = (db: Test, who: string) =>
+  call(db, who, (tx) => mintTeamInvite(tx, {}));
+const join = (db: Test, who: string, code: string) =>
+  call(db, who, (tx) => joinTeam(tx, { code }));
 const leave = (db: Test, who: string) =>
   call(db, who, (tx) => leaveTeam(tx, {}));
 
@@ -91,26 +101,177 @@ test("create team rejects duplicates and double membership", () => {
   expect(db.db.bot.count()).toBe(7n);
 });
 
-test("join team adds a member", () => {
+test("joining with an invite adds a member", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
-  join(db, "bob", " Team ");
+  mintInvite(db, "alice");
+  const code = invitesFor(db, "alice")[0]!.code;
+  join(db, "bob", ` ${code} `);
 
   const bob = member(db, "bob")!;
   expect(bob.role.tag).toBe("Member");
   expect(bob.teamId).toBe(member(db, "alice")!.teamId);
+  expect(invitesFor(db, "alice"), "invite is single-use").toEqual([]);
 
-  expect(failure(() => join(db, "bob", "Team"))).toBe(
-    "You're already on a team",
+  expect(failure(() => join(db, "carol", code))).toBe("No such invite");
+  expect(member(db, "carol")).toBeNull();
+});
+
+// Members can mint bot credentials, so knowing a team's (public) name
+// mustn't be enough to join it.
+test("a team name is not an invite", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  expect(failure(() => join(db, "mallory", "Team"))).toBe("No such invite");
+  expect(member(db, "mallory")).toBeNull();
+});
+
+test("joining twice is rejected and keeps the invite", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  create(db, "bob", "Other", "Other");
+  mintInvite(db, "alice");
+  const code = invitesFor(db, "alice")[0]!.code;
+
+  expect(failure(() => join(db, "bob", code))).toBe("You're already on a team");
+  expect(member(db, "bob")!.teamId).not.toBe(member(db, "alice")!.teamId);
+  expect(invitesFor(db, "alice").length).toBe(1);
+});
+
+test("only owners can invite", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  invite(db, "alice", "bob");
+
+  expect(failure(() => mintInvite(db, "bob"))).toBe("Only owners can invite");
+  expect(failure(() => mintInvite(db, "stranger"))).toBe(
+    "You're not on a team",
   );
-  expect(failure(() => join(db, "carol", "Nope"))).toBe("No such team");
+  expect(db.db.teamInvite.count()).toBe(0n);
+
+  call(db, "alice", (tx) =>
+    promoteToOwner(tx, { targetUser: identity("bob") }),
+  );
+  mintInvite(db, "bob");
+  expect(invitesFor(db, "bob")[0]!.teamId).toBe(member(db, "alice")!.teamId);
+});
+
+test("minted invites are unique codes with a one day ttl", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  mintInvite(db, "alice");
+  mintInvite(db, "alice");
+
+  const invites = invitesFor(db, "alice");
+  expect(invites.length).toBe(2);
+  expect(invites[0]!.code).not.toBe(invites[1]!.code);
+  for (const i of invites) {
+    expect(i.code.length).toBe(12);
+    expect(i.teamId).toBe(member(db, "alice")!.teamId);
+    expect(i.expiresAt).toEqual(afterSeconds(now(), INVITE_TTL_SECONDS));
+  }
+});
+
+test("expired invites are rejected", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  mintInvite(db, "alice");
+  const code = invitesFor(db, "alice")[0]!.code;
+
+  db.clock.set(afterSeconds(now(), INVITE_TTL_SECONDS));
+  expect(failure(() => join(db, "bob", code))).toBe("This invite has expired");
+  expect(member(db, "bob")).toBeNull();
+});
+
+function inviteExpiryJobs(db: Test): InviteExpirySchedule[] {
+  return [...db.db.inviteExpirySchedule.iter()];
+}
+
+test("minting schedules the invite to expire", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  mintInvite(db, "alice");
+
+  const invite = invitesFor(db, "alice").pop()!;
+  const jobs = inviteExpiryJobs(db);
+  expect(jobs.length).toBe(1);
+  expect(jobs[0]!.inviteId).toBe(invite.id);
+  expect(jobs[0]!.scheduledAt).toEqual(
+    ScheduleAt.time(invite.expiresAt.microsSinceUnixEpoch),
+  );
+});
+
+test("expired invites are cleaned up", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  mintInvite(db, "alice");
+  mintInvite(db, "alice");
+  const job = inviteExpiryJobs(db).sort((a, b) =>
+    byBigint(a.inviteId, b.inviteId),
+  )[0]!;
+
+  db.clock.set(afterSeconds(now(), INVITE_TTL_SECONDS));
+  internal(db, (tx) => inviteExpiryTick(tx, { job }));
+
+  const left = invitesFor(db, "alice");
+  expect(left.length, "only the expired invite goes").toBe(1);
+  expect(left[0]!.id).not.toBe(job.inviteId);
+});
+
+test("the expiry job tolerates an already redeemed invite", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  invite(db, "alice", "bob");
+
+  const job = inviteExpiryJobs(db).pop()!;
+  internal(db, (tx) => inviteExpiryTick(tx, { job }));
+});
+
+test("clients cannot expire invites", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  mintInvite(db, "alice");
+  const job = inviteExpiryJobs(db).pop()!;
+
+  const err = failure(() =>
+    call(db, "mallory", (tx) => inviteExpiryTick(tx, { job })),
+  );
+  expect(err).toBe("Only the scheduler may call this");
+  expect(invitesFor(db, "alice").length).toBe(1);
+});
+
+test("an invite lapses when its owner leaves", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  invite(db, "alice", "bob");
+  mintInvite(db, "alice");
+  const code = invitesFor(db, "alice")[0]!.code;
+  leave(db, "alice");
+
+  expect(failure(() => join(db, "carol", code))).toBe(
+    "This invite is no longer valid",
+  );
+  expect(member(db, "carol")).toBeNull();
+});
+
+test("dissolving a team revokes its invites", () => {
+  const db = newDb();
+  create(db, "alice", "Team", "Robo");
+  create(db, "bob", "Other", "Other");
+  mintInvite(db, "alice");
+  mintInvite(db, "bob");
+  const code = invitesFor(db, "alice")[0]!.code;
+  leave(db, "alice");
+
+  expect(failure(() => join(db, "carol", code))).toBe("No such invite");
+  expect(invitesFor(db, "bob").length, "other teams keep theirs").toBe(1);
 });
 
 test("leaving keeps the team while members remain", () => {
   const db = newDb();
   const botId = teamWithBot(db, "alice", "Robo");
   const teamId = member(db, "alice")!.teamId;
-  join(db, "bob", "Team Robo");
+  invite(db, "alice", "bob");
 
   leave(db, "alice");
 
@@ -137,7 +298,7 @@ test("the last member leaving dissolves the team bot and credentials", () => {
 test("owners can promote teammates", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
-  join(db, "bob", "Team");
+  invite(db, "alice", "bob");
 
   call(db, "alice", (tx) =>
     promoteToOwner(tx, { targetUser: identity("bob") }),
@@ -149,8 +310,8 @@ test("owners can promote teammates", () => {
 test("promotion rules", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
-  join(db, "bob", "Team");
-  join(db, "carol", "Team");
+  invite(db, "alice", "bob");
+  invite(db, "alice", "carol");
   create(db, "dave", "Other", "Other");
 
   const promote = (who: string, target: string) =>
@@ -210,7 +371,7 @@ test("mints that share an rng seed get different codes", () => {
 test("any team member can mint for the team bot", () => {
   const db = newDb();
   create(db, "alice", "Team", "Robo");
-  join(db, "bob", "Team");
+  invite(db, "alice", "bob");
   mint(db, "bob");
   expect(noncesFor(db, "bob")[0]!.botId).toBe(botNamed(db, "Robo").id);
 });

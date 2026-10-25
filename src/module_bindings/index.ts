@@ -48,6 +48,7 @@ import JoinLobbyReducer from "./join_lobby_reducer";
 import JoinTeamReducer from "./join_team_reducer";
 import LeaveTeamReducer from "./leave_team_reducer";
 import MintCredentialNonceReducer from "./mint_credential_nonce_reducer";
+import MintTeamInviteReducer from "./mint_team_invite_reducer";
 import PromoteToOwnerReducer from "./promote_to_owner_reducer";
 import RegisterForTournamentReducer from "./register_for_tournament_reducer";
 import RegisterSimBotsReducer from "./register_sim_bots_reducer";
@@ -82,6 +83,9 @@ import MyAdminRow from "./my_admin_table";
 import MyNoncesRow from "./my_nonces_table";
 import MyRackRow from "./my_rack_table";
 import MyTeamRow from "./my_team_table";
+import MyTeamInvitesRow from "./my_team_invites_table";
+import OpenLobbiesRow from "./open_lobbies_table";
+import OpenLobbyMembersRow from "./open_lobby_members_table";
 import RatingHistoryRow from "./rating_history_table";
 import RetiredBotStatsRow from "./retired_bot_stats_table";
 import TeamRow from "./team_table";
@@ -447,6 +451,27 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyTeamRow),
+  myTeamInvites: __table({
+    name: 'my_team_invites',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyTeamInvitesRow),
+  openLobbies: __table({
+    name: 'open_lobbies',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, OpenLobbiesRow),
+  openLobbyMembers: __table({
+    name: 'open_lobby_members',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, OpenLobbyMembersRow),
   visibleAuctionTopBids: __table({
     name: 'visible_auction_top_bids',
     indexes: [
@@ -472,6 +497,7 @@ const reducersSchema = __reducers(
   __reducerSchema("join_team", JoinTeamReducer),
   __reducerSchema("leave_team", LeaveTeamReducer),
   __reducerSchema("mint_credential_nonce", MintCredentialNonceReducer),
+  __reducerSchema("mint_team_invite", MintTeamInviteReducer),
   __reducerSchema("promote_to_owner", PromoteToOwnerReducer),
   __reducerSchema("register_for_tournament", RegisterForTournamentReducer),
   __reducerSchema("register_sim_bots", RegisterSimBotsReducer),
