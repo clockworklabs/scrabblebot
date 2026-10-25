@@ -33,6 +33,8 @@ import spacetimedb, {
   credentialNonce,
   holding,
   inviteExpirySchedule,
+  lobby,
+  lobbyMember,
   lobbyTimeoutSchedule,
   TeamSummary,
   nonceExpirySchedule,
@@ -127,6 +129,27 @@ export const visibleAuctionTopBids = spacetimedb.view(
       for (const top of ctx.db.auctionTopBid.topBidByMatch.filter(m.id)) {
         out.push(top);
       }
+    }
+    return out;
+  },
+);
+
+// The lobby taking joins and the bots in it. Clients can't filter on the
+// status enum in a subscription, and every lobby ever opened stays in the
+// table, so the site subscribes to these instead of the tables.
+export const openLobbies = spacetimedb.anonymousView(
+  { public: true },
+  t.array(lobby.rowType),
+  (ctx) => [...ctx.db.lobby.lobbyByStatus.filter({ tag: "Open" })],
+);
+
+export const openLobbyMembers = spacetimedb.anonymousView(
+  { public: true },
+  t.array(lobbyMember.rowType),
+  (ctx) => {
+    const out = [];
+    for (const l of ctx.db.lobby.lobbyByStatus.filter({ tag: "Open" })) {
+      out.push(...ctx.db.lobbyMember.lmByLobby.filter(l.id));
     }
     return out;
   },

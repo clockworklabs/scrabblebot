@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
-import { useConn } from "../connection";
-import type { DbConnection } from "../module_bindings";
+import { useConn, useSubscription } from "../connection";
+import { tables, type DbConnection } from "../module_bindings";
 import type {
   Auction,
   AuctionResult,
@@ -14,6 +14,7 @@ import {
   matchHistory,
   openAuctions,
   standingsByMatch,
+  useMatchRows,
   type BotNames,
 } from "../data";
 import { matchOutcome, msUntil, reconstructRacks } from "../util";
@@ -25,6 +26,8 @@ export default function MatchView() {
   const { conn } = useConn();
   const { id } = useParams<{ id: string }>();
   const matchId = id ? BigInt(id) : null;
+  useMatchRows(matchId === null ? [] : [matchId], "history");
+  useSubscription([tables.visibleAuctionTopBids]);
   if (!conn || matchId === null) return <PageHeader title="Match…" />;
   const m = conn.db.matchState.id.find(matchId);
   if (!m) return <PageHeader title="Match not found" />;

@@ -1,8 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "react-oidc-context";
-import { DbConnection } from "./module_bindings";
-import type { Identity } from "spacetimedb";
+import {
+  DbConnection,
+  tables,
+  type SubscriptionHandle,
+} from "./module_bindings";
+import { toSql, type Identity } from "spacetimedb";
 
 export const HOST =
   import.meta.env.VITE_STDB_HOST ?? "https://maincloud.spacetimedb.com";
@@ -32,6 +36,82 @@ const ConnectionContext = createContext<Ctx>({
 
 export function useConn() {
   return useContext(ConnectionContext);
+}
+
+// What every page needs, subscribed for as long as the site is open. These
+// stay small: one row per bot, team or tournament. A match's history (its
+// tiles, bids and words) piles up with every match played, so pages
+// subscribe to that with `useSubscription` for the matches they show.
+const GLOBAL_QUERIES = [
+  tables.bot,
+  tables.botStats,
+  tables.botCredential,
+  tables.team,
+  tables.teamMember,
+  tables.humanLink,
+  tables.admin,
+  tables.matchmakerConfig,
+  tables.matchState,
+  tables.openLobbies,
+  tables.openLobbyMembers,
+  tables.tournament,
+  tables.tournamentEntry,
+  tables.tournamentMatch,
+  tables.myTeam,
+  tables.myNonces,
+  tables.myTeamInvites,
+  tables.myAdmin,
+];
+
+// Subscribes to `queries` while the calling component is mounted. Each query
+// gets its own subscription, so when the set changes only the queries that
+// came or went are subscribed or dropped, and rows still on the page stay
+// in the cache instead of flashing out and back in.
+export function useSubscription(queries: Parameters<typeof toSql>[0][]) {
+  const { conn, connected } = useConn();
+  const live = useRef(
+    new Map<string, { conn: DbConnection; handle: SubscriptionHandle }>(),
+  );
+  const sqls = queries.map(toSql);
+  const key = sqls.join("\n");
+
+  useEffect(() => {
+    const wanted = new Set(conn && connected ? sqls : []);
+    for (const [sql, sub] of live.current) {
+      if (sub.conn !== conn || !wanted.has(sql)) {
+        unsubscribe(sub.handle);
+        live.current.delete(sql);
+      }
+    }
+    if (!conn) return;
+    for (const sql of wanted) {
+      if (!live.current.has(sql)) {
+        live.current.set(sql, {
+          conn,
+          handle: conn.subscriptionBuilder().subscribe(sql),
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn, connected, key]);
+
+  useEffect(() => {
+    const subs = live.current;
+    return () => {
+      for (const sub of subs.values()) unsubscribe(sub.handle);
+      subs.clear();
+    };
+  }, []);
+}
+
+// Ending a subscription on a connection that has since closed throws, and
+// there's nothing left to end.
+function unsubscribe(handle: SubscriptionHandle) {
+  try {
+    handle.unsubscribe();
+  } catch {
+    /* */
+  }
 }
 
 export function ConnectionProvider({ children }: { children: ReactNode }) {
@@ -79,7 +159,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         if (!idToken) localStorage.setItem("scrabblebot-token", freshToken);
         setIdentity(id);
         setConnected(true);
-        c.subscriptionBuilder().onApplied(bump).subscribeToAllTables();
+        c.subscriptionBuilder().onApplied(bump).subscribe(GLOBAL_QUERIES);
         for (const t of [
           c.db.bot,
           c.db.botStats,
@@ -88,8 +168,8 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           c.db.auction,
           c.db.auctionResult,
           c.db.wordPlay,
-          c.db.lobby,
-          c.db.lobbyMember,
+          c.db.openLobbies,
+          c.db.openLobbyMembers,
           c.db.tournament,
           c.db.tournamentEntry,
           c.db.tournamentMatch,

@@ -14,6 +14,7 @@ import {
   matchHistory,
   standingsByMatch,
   tournamentEntries,
+  useMatchRows,
   type BotNames,
 } from "../data";
 import { Standings } from "../Standings";
@@ -218,6 +219,10 @@ function Rounds({
   tmatches: TournamentMatch[];
   botName: BotNames;
 }) {
+  useMatchRows(
+    tmatches.map((tm) => tm.matchId),
+    "scores",
+  );
   const standings = standingsByMatch(conn);
   // Group tournamentMatch rows by (phase, round), in the order played.
   const grouped = new Map<string, TournamentMatch[]>();
@@ -393,6 +398,7 @@ function LiveStandings({
   matchId: bigint;
   botName: BotNames;
 }) {
+  useMatchRows([matchId], "history");
   const participants = standingsByMatch(conn).get(matchId) ?? [];
   const { results, plays } = matchHistory(conn, matchId);
   const rackSize = conn.db.matchState.id.find(matchId)?.startingRackSize ?? 0;
@@ -420,6 +426,10 @@ function FinalScores({
   finalists: TournamentEntry[];
   botName: BotNames;
 }) {
+  useMatchRows(
+    games.map((g) => g.matchId),
+    "scores",
+  );
   const scoreIn = (matchId: bigint, botId: bigint) =>
     (standingsByMatch(conn).get(matchId) ?? []).find((p) => p.botId === botId)
       ?.score;
