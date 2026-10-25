@@ -12,12 +12,9 @@ export default function TeamNew() {
   const [mode, setMode] = useState<Mode>("create");
   const [teamName, setTeamName] = useState("");
   const [botName, setBotName] = useState("");
-  const [joinName, setJoinName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const allTeams = conn ? [...conn.db.team.iter()] : [];
-  allTeams.sort((a, b) => a.name.localeCompare(b.name));
 
   // Call the reducer, then give it a moment and check whether we're now on a
   // team. The reducers report failure only by not changing anything.
@@ -51,13 +48,13 @@ export default function TeamNew() {
   }
 
   function join() {
-    if (!joinName.trim()) {
-      setError("Pick a team to join.");
+    if (!joinCode.trim()) {
+      setError("Enter an invite code.");
       return;
     }
     submit(
-      () => conn?.reducers.joinTeam({ teamName: joinName.trim() }),
-      "Failed to join — team doesn't exist, or you're already on one?",
+      () => conn?.reducers.joinTeam({ code: joinCode.trim() }),
+      "Failed to join — invite code wrong or expired, or you're already on a team?",
     );
   }
 
@@ -129,22 +126,18 @@ export default function TeamNew() {
           <>
             <p>
               Joining an existing team makes you a Member. You'll be able to
-              mint credentials for the team's bot and play with it.
+              mint credentials for the team's bot and play with it. Ask one of
+              the team's owners for an invite code — they can make one on their
+              team page.
             </p>
             <div className="field-row">
-              <label>Team name</label>
+              <label>Invite code</label>
               <input
-                value={joinName}
-                onChange={(e) => setJoinName(e.target.value)}
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
                 disabled={busy}
-                placeholder="exact team name"
-                list="existing-teams"
+                placeholder="e.g. 7KQ2MXR9HWTC"
               />
-              <datalist id="existing-teams">
-                {allTeams.map((t) => (
-                  <option key={String(t.id)} value={t.name} />
-                ))}
-              </datalist>
             </div>
           </>
         )}
@@ -160,23 +153,6 @@ export default function TeamNew() {
             </button>
           )}
         </div>
-        {mode === "join" && allTeams.length > 0 && (
-          <>
-            <span className="caption">Existing teams:</span>
-            <div className="actions">
-              {allTeams.map((t) => (
-                <button
-                  key={String(t.id)}
-                  className="button small"
-                  onClick={() => setJoinName(t.name)}
-                  disabled={busy}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
       </Panel>
     </>
   );

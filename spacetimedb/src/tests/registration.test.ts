@@ -6,7 +6,6 @@ import {
   cancelTournament,
   createTournament,
   joinLobby,
-  joinTeam,
   leaveTeam,
   registerForTournament,
   registerSimBots,
@@ -19,6 +18,7 @@ import {
   byBigint,
   call,
   failure,
+  invite,
   makeAdmin,
   newDb,
   runToEnd,
@@ -250,7 +250,7 @@ function underwayWithAnn(db: Test): [bigint, bigint] {
 test("a team with a bot in a tournament cannot dissolve", () => {
   const db = adminDb();
   const [t, ann] = underwayWithAnn(db);
-  call(db, "bob", (tx) => joinTeam(tx, { teamName: "Team Ann" }));
+  invite(db, "alice", "bob");
 
   leave(db, "bob"); // not the last member, so the team stays
   expect(failure(() => leave(db, "alice"))).toBe(

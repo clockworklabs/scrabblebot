@@ -168,6 +168,44 @@ export const nonceExpirySchedule = table(
 );
 export type NonceExpirySchedule = Infer<typeof nonceExpirySchedule.rowType>;
 
+// Single-use team invite code, minted by a team owner. Joining a team
+// takes one, so only people an owner hands a code to can join (and then
+// mint credentials for the team's bot). Private — the creator reads their
+// own via the `myTeamInvites` view.
+export const teamInvite = table(
+  {
+    indexes: [
+      {
+        accessor: "inviteByCreator",
+        algorithm: "btree",
+        columns: ["creator"],
+      },
+      { accessor: "inviteByTeam", algorithm: "btree", columns: ["teamId"] },
+    ],
+  },
+  t.row("TeamInvite", {
+    id: t.u64().primaryKey().autoInc(),
+    code: t.string().unique(),
+    teamId: t.u64(),
+    // The human (resolved spacetime.com identity) who minted this invite.
+    creator: t.identity(),
+    expiresAt: t.timestamp(),
+  }),
+);
+export type TeamInvite = Infer<typeof teamInvite.rowType>;
+
+// Deletes an invite when it expires. A redeemed invite is deleted sooner,
+// and its job then finds nothing to do.
+export const inviteExpirySchedule = table(
+  {},
+  t.row("InviteExpirySchedule", {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    inviteId: t.u64(),
+  }),
+);
+export type InviteExpirySchedule = Infer<typeof inviteExpirySchedule.rowType>;
+
 // Team — group of humans, owns exactly one Bot (Bot.teamId points back).
 export const team = table(
   { public: true },
@@ -604,6 +642,8 @@ const spacetimedb = schema({
   humanLink,
   credentialNonce,
   nonceExpirySchedule,
+  teamInvite,
+  inviteExpirySchedule,
   team,
   teamMember,
   admin,

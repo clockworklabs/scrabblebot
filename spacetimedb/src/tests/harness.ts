@@ -24,8 +24,10 @@ import {
   claimCredential,
   createTeam,
   init,
+  joinTeam,
   lobbyTimeoutTick,
   mintCredentialNonce,
+  mintTeamInvite,
 } from "../index";
 import spacetimedb, {
   type Auction,
@@ -36,6 +38,7 @@ import spacetimedb, {
   type LobbyTimeoutSchedule,
   type Match,
   type MatchParticipant,
+  type TeamInvite,
 } from "../schema";
 
 export type Test = ModuleTestHarness<InferSchema<typeof spacetimedb>>;
@@ -152,6 +155,19 @@ export function noncesFor(test: Test, subject: string): CredentialNonce[] {
   return [
     ...test.db.credentialNonce.nonceByCreator.filter(identity(subject)),
   ].sort((a, b) => byBigint(a.id, b.id));
+}
+
+export function invitesFor(test: Test, subject: string): TeamInvite[] {
+  return [...test.db.teamInvite.inviteByCreator.filter(identity(subject))].sort(
+    (a, b) => byBigint(a.id, b.id),
+  );
+}
+
+/** `owner` invites `who` onto their team, and `who` joins. */
+export function invite(test: Test, owner: string, who: string) {
+  call(test, owner, (tx) => mintTeamInvite(tx, {}));
+  const code = invitesFor(test, owner).pop()!.code;
+  call(test, who, (tx) => joinTeam(tx, { code }));
 }
 
 /** Start a match directly, bypassing the lobby. Returns the match id. */

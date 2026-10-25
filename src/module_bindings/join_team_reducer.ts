@@ -11,5 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  teamName: __t.string(),
+  code: __t.string(),
 };

@@ -207,6 +207,7 @@ bids via subscription deltas, but for a hackathon this is sufficient.
 | `my_rack` | `Holding[]` | The caller's letters across all matches they're in (private to caller) |
 | `my_team` | `TeamSummary \| undefined` | The calling human's team summary (resolves browser→human via `HumanLink`) |
 | `my_nonces` | `CredentialNonce[]` | Nonces the caller has minted (private to caller) |
+| `my_team_invites` | `TeamInvite[]` | Team invites the caller has minted (private to caller) |
 | `my_admin` | `Admin \| undefined` | Caller's admin row if present |
 
 Views are how we let clients query data that depends on the caller's
@@ -227,7 +228,9 @@ assume the caller already *is* the human.
 | Reducer | Caller | Notes |
 |---|---|---|
 | `connect_id(web_identity)` | Human (CLI) | Writes a `HumanLink` |
-| `create_team(team, bot)` / `join_team` / `leave_team` / `promote_to_owner` | Human | Resolves caller via `resolveHuman` |
+| `create_team(team, bot)` / `leave_team` / `promote_to_owner` | Human | Resolves caller via `resolveHuman` |
+| `mint_team_invite()` | Team owner | Writes a single-use `TeamInvite` (expires after a day) |
+| `join_team(code)` | Human | Redeems a `TeamInvite`; members can mint credentials, so a team name alone can't get you in |
 | `mint_credential_nonce()` | Team member | Writes a `CredentialNonce` |
 | `claim_credential(code)` | Fresh anonymous client | Writes a `BotCredential` |
 | `join_lobby()` | Bot credential | Looks up `callerBotId` via `BotCredential` |

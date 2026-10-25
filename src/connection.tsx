@@ -100,6 +100,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
           c.db.humanLink,
           c.db.myTeam,
           c.db.myNonces,
+          c.db.myTeamInvites,
           c.db.admin,
           c.db.myAdmin,
           c.db.visibleAuctionTopBids,

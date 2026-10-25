@@ -5,7 +5,7 @@ import { DbConnection } from "../module_bindings";
 import type { BotCredential } from "../module_bindings/types";
 import { myTeam } from "../data";
 import { fmtDateTime, fmtTimestamp } from "../util";
-import { PageHeader, Panel, ShortIdentity } from "../ui";
+import { PageHeader, Panel, ShortIdentity, useAction } from "../ui";
 
 type GenStatus = "idle" | "minting" | "claiming" | "done" | "error";
 
@@ -46,6 +46,9 @@ export default function Team() {
       </Panel>
       <TokenGenerator conn={conn} botId={team.botId} botName={team.botName} />
       <Credentials credentials={credentials} />
+      {team.role.tag === "Owner" && (
+        <Invites conn={conn} teamId={team.teamId} />
+      )}
     </>
   );
 }
@@ -222,6 +225,55 @@ function Credentials({ credentials }: { credentials: BotCredential[] }) {
         <div className="empty">
           No credentials yet. Click "Generate token" above to make one.
         </div>
+      )}
+    </Panel>
+  );
+}
+
+// Owners hand out single-use invite codes; joining a team takes one.
+function Invites({ conn, teamId }: { conn: DbConnection; teamId: bigint }) {
+  const [error, run] = useAction();
+  // Expired invites drop out of the view when the module deletes them.
+  const invites = [...conn.db.myTeamInvites.iter()].filter(
+    (i) => i.teamId === teamId,
+  );
+  invites.sort((a, b) => fmtTimestamp(b.expiresAt) - fmtTimestamp(a.expiresAt));
+
+  return (
+    <Panel full title="Invite a teammate">
+      <p>
+        Teammates join with an invite code. Each code works once and expires
+        after a day. Anyone on the team can generate tokens for the bot, so only
+        invite people you trust with it.
+      </p>
+      <div className="actions">
+        <button
+          className="button"
+          onClick={() => run(conn.reducers.mintTeamInvite({}))}
+        >
+          Create invite code
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {invites.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Expires</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invites.map((i) => (
+              <tr key={String(i.id)}>
+                <td>
+                  <code>{i.code}</code>
+                </td>
+                <td className="secondary">{fmtDateTime(i.expiresAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </Panel>
   );

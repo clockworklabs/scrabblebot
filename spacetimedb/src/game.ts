@@ -51,6 +51,8 @@ export const AUCTION_DURATION_MS = 1000n;
 export const AUCTION_RESERVE = 1n;
 // One hour. Long enough to copy a nonce into a bot config without hurry.
 export const NONCE_TTL_SECONDS = 60n * 60n;
+// One day. Time for an owner to pass an invite code to a teammate.
+export const INVITE_TTL_SECONDS = 24n * 60n * 60n;
 
 // Lobby: one open lobby at a time. Bots call `joinLobby` to enter. When
 // it fills with `LOBBY_MAX_SIZE` real bots, the match starts immediately.
