@@ -11,6 +11,7 @@ import { useEffect, useRef } from "react";
 import { ConnectionProvider, useConn } from "./connection";
 import { amAdmin, humanLinkOf } from "./data";
 import { Tile } from "./Tile";
+import { Panel } from "./ui";
 import Home from "./pages/Home";
 import Matches from "./pages/Matches";
 import MatchView from "./pages/MatchView";
@@ -24,7 +25,7 @@ import Tournament from "./pages/Tournament";
 import Admin from "./pages/Admin";
 
 function Nav() {
-  const { conn, identity, connected, dbName, loadError } = useConn();
+  const { conn, identity, connected, ready, dbName, loadError } = useConn();
   const link = humanLinkOf(conn, identity);
 
   // On narrow screens the links scroll sideways; keep the current page's
@@ -80,15 +81,16 @@ function Nav() {
             />
             <span className="conn-db">{dbName}</span>
           </span>
-          {link ? (
-            <Link to="/account" title="Linked to spacetimedb.com identity">
-              linked as {link.humanIdentity.toHexString().slice(0, 8)}…
-            </Link>
-          ) : (
-            <Link to="/account" className="link-cta">
-              Link account
-            </Link>
-          )}
+          {ready &&
+            (link ? (
+              <Link to="/account" title="Linked to spacetimedb.com identity">
+                linked as {link.humanIdentity.toHexString().slice(0, 8)}…
+              </Link>
+            ) : (
+              <Link to="/account" className="link-cta">
+                Link account
+              </Link>
+            ))}
         </span>
       </nav>
     </header>
@@ -108,6 +110,35 @@ function LoadError() {
   );
 }
 
+// Until the core tables are in, every page would render its "nothing here
+// yet" state, which reads as broken rather than loading.
+function Pages() {
+  const { ready } = useConn();
+  if (!ready) {
+    return (
+      <Panel full>
+        <p className="secondary">Loading…</p>
+      </Panel>
+    );
+  }
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/matches" element={<Matches />} />
+      <Route path="/matches/:id" element={<MatchView />} />
+      <Route path="/account" element={<Account />} />
+      <Route path="/team" element={<Team />} />
+      <Route path="/team/new" element={<TeamNew />} />
+      <Route path="/register" element={<Navigate to="/team/new" replace />} />
+      <Route path="/leaderboard" element={<Leaderboard />} />
+      <Route path="/bots/:id" element={<BotView />} />
+      <Route path="/docs" element={<Docs />} />
+      <Route path="/tournament" element={<Tournament />} />
+      <Route path="/admin" element={<Admin />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <ConnectionProvider>
@@ -115,23 +146,7 @@ export default function App() {
         <Nav />
         <div className="page">
           <LoadError />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/matches" element={<Matches />} />
-            <Route path="/matches/:id" element={<MatchView />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/team/new" element={<TeamNew />} />
-            <Route
-              path="/register"
-              element={<Navigate to="/team/new" replace />}
-            />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/bots/:id" element={<BotView />} />
-            <Route path="/docs" element={<Docs />} />
-            <Route path="/tournament" element={<Tournament />} />
-            <Route path="/admin" element={<Admin />} />
-          </Routes>
+          <Pages />
         </div>
       </BrowserRouter>
     </ConnectionProvider>

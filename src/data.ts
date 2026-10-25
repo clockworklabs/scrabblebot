@@ -81,13 +81,9 @@ export function matchHistory(
   conn: DbConnection,
   matchId: bigint,
 ): { results: AuctionResult[]; plays: WordPlay[] } {
-  const results = [...conn.db.auctionResult.iter()].filter(
-    (r) => r.matchId === matchId,
-  );
+  const results = [...conn.db.auctionResult.resultByMatch.filter(matchId)];
   results.sort((a, b) => Number(a.auctionId - b.auctionId));
-  const plays = [...conn.db.wordPlay.iter()].filter(
-    (p) => p.matchId === matchId,
-  );
+  const plays = [...conn.db.wordPlay.playByMatch.filter(matchId)];
   plays.sort((a, b) => Number(a.id - b.id));
   return { results, plays };
 }

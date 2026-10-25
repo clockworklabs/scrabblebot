@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useConn } from "../connection";
+import { useConn, useNow, useSubscribe } from "../connection";
+import { tables } from "../module_bindings";
 import type {
   Match,
   MatchParticipant,
@@ -19,10 +20,19 @@ export default function Matches() {
   const matches = conn ? [...conn.db.matchState.iter()] : [];
   matches.sort((a, b) => Number(b.id - a.id));
   const standings = standingsByMatch(conn);
-  const best = bestWords(conn);
   const botName = botNames(conn);
-  const now = Date.now();
+  const now = useNow(5000);
   const live = matches.filter((m) => m.status.tag === "Running").length;
+
+  // The best word column needs each listed match's plays, so ask for just
+  // those rather than every play ever made.
+  const listed = matches.slice(0, shown).map((m) => m.id);
+  useSubscribe(`best:${listed.map(String).join(",")}`, () =>
+    listed.map((matchId) =>
+      tables.wordPlay.where((p) => p.matchId.eq(matchId)),
+    ),
+  );
+  const best = bestWords(conn);
 
   return (
     <>

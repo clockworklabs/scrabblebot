@@ -1,5 +1,11 @@
 import { Link } from "react-router-dom";
-import { STARTER_ENV, useConn } from "../connection";
+import {
+  STARTER_ENV,
+  matchQueries,
+  useConn,
+  useNow,
+  useSubscribe,
+} from "../connection";
 import type { DbConnection } from "../module_bindings";
 import type {
   Tournament as TournamentRow,
@@ -393,6 +399,10 @@ function LiveStandings({
   matchId: bigint;
   botName: BotNames;
 }) {
+  const now = useNow(500);
+  // Only the match being played: the tournament's earlier games are already
+  // in the archive.
+  useSubscribe(`match:${matchId}`, () => matchQueries(matchId));
   const participants = standingsByMatch(conn).get(matchId) ?? [];
   const { results, plays } = matchHistory(conn, matchId);
   const rackSize = conn.db.matchState.id.find(matchId)?.startingRackSize ?? 0;
@@ -403,7 +413,7 @@ function LiveStandings({
       startingRackSize={rackSize}
       plays={plays}
       botName={botName}
-      now={Date.now()}
+      now={now}
     />
   );
 }

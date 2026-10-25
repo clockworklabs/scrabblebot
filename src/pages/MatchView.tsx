@@ -1,5 +1,10 @@
 import { Link, useParams } from "react-router-dom";
-import { useConn } from "../connection";
+import {
+  matchQueries,
+  useConn,
+  useNow,
+  useSubscribe,
+} from "../connection";
 import type { DbConnection } from "../module_bindings";
 import type {
   Auction,
@@ -25,6 +30,11 @@ export default function MatchView() {
   const { conn } = useConn();
   const { id } = useParams<{ id: string }>();
   const matchId = id ? BigInt(id) : null;
+  const now = useNow(250);
+  // This match's auctions, sales and plays, rather than every match's.
+  useSubscribe(`match:${matchId ?? ""}`, () =>
+    matchId === null ? [] : matchQueries(matchId),
+  );
   if (!conn || matchId === null) return <PageHeader title="Match…" />;
   const m = conn.db.matchState.id.find(matchId);
   if (!m) return <PageHeader title="Match not found" />;
@@ -59,7 +69,11 @@ export default function MatchView() {
           botName={botName}
         />
       ) : (
-        <AuctionStage match={m} auction={openAuctions(conn).get(matchId)} />
+        <AuctionStage
+          match={m}
+          auction={openAuctions(conn).get(matchId)}
+          now={now}
+        />
       )}
       <Panel title="Scoreboard">
         {participants.length === 0 ? (
@@ -70,7 +84,7 @@ export default function MatchView() {
             racks={racks}
             plays={plays}
             botName={botName}
-            now={Date.now()}
+            now={now}
             startingRackSize={m.startingRackSize}
           />
         )}
@@ -103,9 +117,11 @@ function topBids(conn: DbConnection, matchId: bigint): Map<bigint, bigint> {
 function AuctionStage({
   match,
   auction,
+  now,
 }: {
   match: Match;
   auction: Auction | undefined;
+  now: number;
 }) {
   return (
     <Panel title="Current auction">
@@ -114,8 +130,7 @@ function AuctionStage({
           <>
             <Tile key={String(auction.id)} letter={auction.letter} size="xl" />
             <div className="countdown">
-              {(msUntil(auction.closesAt, Date.now()) / 1000).toFixed(2)}s left
-              to bid
+              {(msUntil(auction.closesAt, now) / 1000).toFixed(2)}s left to bid
             </div>
           </>
         ) : (

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useConn } from "../connection";
+import { matchQueries, useConn, useNow, useSubscribe } from "../connection";
 import type {
   Auction,
   Bot,
@@ -29,7 +29,7 @@ import { BagBar, BagCount, Panel } from "../ui";
 
 export default function Home() {
   const { conn } = useConn();
-  const now = Date.now();
+  const now = useNow(250);
 
   const bots = conn ? [...conn.db.bot.iter()] : [];
   const botName = botNames(conn);
@@ -52,6 +52,9 @@ export default function Home() {
 
   // The featured live match, with racks rebuilt from its public history.
   const live = running[0];
+  useSubscribe(`match:${live?.id ?? ""}`, () =>
+    live ? matchQueries(live.id) : [],
+  );
   const history =
     conn && live ? matchHistory(conn, live.id) : { results: [], plays: [] };
 

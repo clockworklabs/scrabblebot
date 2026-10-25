@@ -1,5 +1,6 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useConn } from "../connection";
+import { useConn, useSubscribe } from "../connection";
+import { tables } from "../module_bindings";
 import { botVersions, liveBotStats } from "../data";
 import {
   isProvisional,
@@ -17,6 +18,13 @@ export default function BotView() {
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const botId = id && /^\d+$/.test(id) ? BigInt(id) : null;
+  // Only this bot's rating history: the whole table is a row per match, for
+  // every bot that ever played.
+  useSubscribe(`rating:${botId ?? ""}`, () =>
+    botId === null
+      ? []
+      : [tables.ratingHistory.where((h) => h.botId.eq(botId))],
+  );
   if (!conn) return <PageHeader title="Bot…" />;
   const bot = botId === null ? undefined : conn.db.bot.id.find(botId);
   if (!bot) return <PageHeader title="Bot not found" />;
