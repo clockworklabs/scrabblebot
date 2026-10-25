@@ -14,6 +14,7 @@ import {
   matchHistory,
   openAuctions,
   standingsByMatch,
+  useMatchRows,
   type BotNames,
 } from "../data";
 import {
@@ -40,18 +41,24 @@ export default function Home() {
   matches.sort((a, b) => Number(b.id - a.id));
   const running = matches.filter((m) => m.status.tag === "Running");
   const ended = matches.filter((m) => m.status.tag === "Ended");
+  const recent = ended.slice(0, RECENT_RESULTS);
 
   // The single open lobby (there's only ever one).
-  const lobby = conn
-    ? [...conn.db.lobby.iter()].find((l) => l.status.tag === "Open")
-    : undefined;
+  const lobby = conn ? conn.db.openLobbies.iter().next().value : undefined;
   const lobbyMembers =
     conn && lobby
-      ? [...conn.db.lobbyMember.iter()].filter((lm) => lm.lobbyId === lobby.id)
+      ? [...conn.db.openLobbyMembers.iter()].filter(
+          (lm) => lm.lobbyId === lobby.id,
+        )
       : [];
 
   // The featured live match, with racks rebuilt from its public history.
   const live = running[0];
+  useMatchRows(live ? [live.id] : [], "history");
+  useMatchRows(
+    recent.map((m) => m.id),
+    "scores",
+  );
   const history =
     conn && live ? matchHistory(conn, live.id) : { results: [], plays: [] };
 
@@ -97,7 +104,8 @@ export default function Home() {
 
       <NextMatch lobby={lobby} members={lobbyMembers} bots={bots} now={now} />
       <RecentResults
-        ended={ended}
+        recent={recent}
+        total={ended.length}
         standingsOf={standingsOf}
         botName={botName}
       />
@@ -322,18 +330,22 @@ function NextMatch({
   );
 }
 
+const RECENT_RESULTS = 6;
+
 function RecentResults({
-  ended,
+  recent,
+  total,
   standingsOf,
   botName,
 }: {
-  ended: Match[];
+  recent: Match[];
+  total: number;
   standingsOf: (m: Match) => MatchParticipant[];
   botName: BotNames;
 }) {
   return (
     <Panel title="Recent results">
-      {ended.length === 0 ? (
+      {recent.length === 0 ? (
         <div className="secondary">No completed matches yet.</div>
       ) : (
         <table className="results">
@@ -346,7 +358,7 @@ function RecentResults({
             </tr>
           </thead>
           <tbody>
-            {ended.slice(0, 6).map((m) => {
+            {recent.map((m) => {
               const { top, winners, runnerUp } = matchOutcome(standingsOf(m));
               return (
                 <tr key={String(m.id)}>
@@ -372,9 +384,9 @@ function RecentResults({
           </tbody>
         </table>
       )}
-      {ended.length > 6 && (
+      {total > recent.length && (
         <Link to="/matches" className="panel-more">
-          All {ended.length} results
+          All {total} results
         </Link>
       )}
     </Panel>

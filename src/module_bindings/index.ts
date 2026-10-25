@@ -82,6 +82,8 @@ import MyNoncesRow from "./my_nonces_table";
 import MyRackRow from "./my_rack_table";
 import MyTeamRow from "./my_team_table";
 import MyTeamInvitesRow from "./my_team_invites_table";
+import OpenLobbiesRow from "./open_lobbies_table";
+import OpenLobbyMembersRow from "./open_lobby_members_table";
 import TeamRow from "./team_table";
 import TeamMemberRow from "./team_member_table";
 import TournamentRow from "./tournament_table";
@@ -410,6 +412,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyTeamInvitesRow),
+  openLobbies: __table({
+    name: 'open_lobbies',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, OpenLobbiesRow),
+  openLobbyMembers: __table({
+    name: 'open_lobby_members',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, OpenLobbyMembersRow),
   visibleAuctionTopBids: __table({
     name: 'visible_auction_top_bids',
     indexes: [

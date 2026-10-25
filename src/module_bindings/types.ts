@@ -260,6 +260,12 @@ export const NonceExpirySchedule = __t.object("NonceExpirySchedule", {
 });
 export type NonceExpirySchedule = __Infer<typeof NonceExpirySchedule>;
 
+export const OpenLobbies = __t.object("OpenLobbies", {});
+export type OpenLobbies = __Infer<typeof OpenLobbies>;
+
+export const OpenLobbyMembers = __t.object("OpenLobbyMembers", {});
+export type OpenLobbyMembers = __Infer<typeof OpenLobbyMembers>;
+
 export const PendingBid = __t.object("PendingBid", {
   id: __t.u64(),
   auctionId: __t.u64(),
