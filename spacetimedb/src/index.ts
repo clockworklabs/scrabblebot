@@ -7,6 +7,7 @@ import {
   botInRunningMatch,
   callerBotId,
   closeAuction,
+  currentVersion,
   endedMatchesInOrder,
   ensureSimBot,
   findParticipant,
@@ -20,6 +21,7 @@ import {
   requireScheduler,
   resolveHuman,
   resolveHumanView,
+  saveStats,
   SEED_ADMIN_HEX,
   updateEloAtMatchEnd,
 } from "./game";
@@ -546,6 +548,36 @@ export const promoteToOwner = spacetimedb.reducer(
     ctx.db.teamMember.id.update({ ...target, role: { tag: "Owner" } });
   },
 );
+
+// A team member starts a new version of the team's bot, which starts its
+// rating over. The old version's stats move to `retiredBotStats` and stay
+// on the leaderboard. A match already under way still counts for the old
+// version.
+export const startNewBotVersion = spacetimedb.reducer((ctx) => {
+  const human = resolveHuman(ctx);
+  const member = ctx.db.teamMember.user.find(human);
+  if (!member) {
+    throw new SenderError("You're not on a team — create or join one first");
+  }
+  const bot = [...ctx.db.bot.botByTeam.filter(member.teamId)][0];
+  if (!bot) {
+    throw new SenderError("Your team has no bot");
+  }
+  const version = currentVersion(ctx, bot.id);
+  ctx.db.botVersion.insert({
+    id: 0n,
+    botId: bot.id,
+    version: version + 1,
+    startedAt: ctx.timestamp,
+  });
+  const stats = ctx.db.botStats.botId.find(bot.id);
+  if (stats) {
+    // No longer the current version, so this files it as retired.
+    saveStats(ctx, version, stats);
+    ctx.db.botStats.botId.delete(bot.id);
+  }
+  console.info(`Bot ${bot.id} started version ${version + 1}`);
+});
 
 // ---------- Credential provisioning ----------
 
@@ -1075,12 +1107,21 @@ export const startNextFinalsMatch = spacetimedb.reducer(
 
 // ---------- ELO ----------
 
-// Resets all BotStats and replays ELO across every ended match in chronological order.
+// Resets all BotStats, retired versions' stats and rating history, and
+// replays both ratings across every ended match in chronological order.
+// Bot versions are kept, so each match still counts for the version that
+// played it.
 export const backfillElo = spacetimedb.reducer((ctx) => {
   requireAdmin(ctx);
 
   for (const stats of [...ctx.db.botStats.iter()]) {
     ctx.db.botStats.botId.delete(stats.botId);
+  }
+  for (const row of [...ctx.db.ratingHistory.iter()]) {
+    ctx.db.ratingHistory.id.delete(row.id);
+  }
+  for (const row of [...ctx.db.retiredBotStats.iter()]) {
+    ctx.db.retiredBotStats.id.delete(row.id);
   }
 
   for (const m of endedMatchesInOrder(ctx)) {

@@ -12,8 +12,8 @@ Built on [SpacetimeDB](https://spacetimedb.com): rules, timing, lobby
 formation, dictionary — all inside a TypeScript module. Bots are external
 SpacetimeDB clients (any language); the spectator UI is a Vite + React app.
 
-Live at **[scrabblebot.vercel.app](https://scrabblebot.vercel.app)** ·
-Bot-writing docs: **[/docs](https://scrabblebot.vercel.app/docs)**
+Live at **[scrabblebot.spacetimedb.com](https://scrabblebot.spacetimedb.com)** ·
+Bot-writing docs: **[/docs](https://scrabblebot.spacetimedb.com/docs)**
 
 ## Repo layout
 
@@ -59,7 +59,11 @@ schedule them. Bots that finish a match just call `join_lobby()` again.
   [ENABLE](https://en.wikipedia.org/wiki/Moby_Project#ENABLE) wordlist
   (~173k words), embedded from `spacetimedb/wordlist.txt`. Swap in TWL or
   SOWPODS if you have a license.
-- **Rating:** per-bot ELO updates pairwise at every match end (K=32).
+- **Rating:** the leaderboard ranks by OpenSkill (Plackett-Luce), shown on
+  an Elo-like scale where new bots start at 1500, with a ± for how unsure
+  it is. A bot is provisional, without a rank, until its ± is within 175.
+  It updates at every match end. An Elo rating (K=32) is kept alongside it.
+  A team can start a new version of its bot to start the rating over.
 
 ## Writing a bot (5-minute version)
 
@@ -86,7 +90,7 @@ and re-join after each one ends. Token is persisted to
 `.token-<BOT_NAME>` after the first run.
 
 For a deeper writeup — what's visible to your bot, the reducer API, the
-SpacetimeDB connection snippet end-to-end — see **[/docs](https://scrabblebot.vercel.app/docs)**.
+SpacetimeDB connection snippet end-to-end — see **[/docs](https://scrabblebot.spacetimedb.com/docs)**.
 
 Bots can use any language SpacetimeDB has an SDK for (Rust, C#, TypeScript).
 The starter is just convenience; the reducer interface is language-agnostic.
@@ -121,7 +125,7 @@ bot pool on every fresh database init.
 
 `/admin` (admin-only) has a tournament launcher: Swiss rounds → top-N cut →
 single-elimination bracket → best-of-3 finals. Match size, Swiss round
-count, and top cut are configurable. ELO ratings are updated independently
+count, and top cut are configurable. Ratings are updated independently
 of tournament standings.
 
 ## Known limitations

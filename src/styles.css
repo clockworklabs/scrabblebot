@@ -29,6 +29,10 @@
   --accent-25: #4cf49040;
   --win: var(--green);
   --warn: #fc6897;
+  /* Chart marks: the brand green stepped down into the dark-mode lightness
+     band (OKLCH L 0.48–0.67), so a line reads as data, not as a highlight. */
+  --chart-line: #2cae65;
+  --chart-band: #2cae651a;
 
   /* Tiles: Scrabble cream with a deep board-green letter. */
   --tile-face-hi: #fbf2d9;
@@ -171,6 +175,25 @@ pre {
 .conn-dot.on {
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-10);
+}
+.conn-dot.failed {
+  background: var(--warn);
+}
+.load-error {
+  padding: 12px 16px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  color: var(--text);
+}
+.load-error strong {
+  color: var(--warn);
+}
+.load-error code {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 .nav .conn-state a.link-cta {
   color: var(--neutral-7);
@@ -1279,7 +1302,141 @@ label {
 }
 .lb-rating {
   font-weight: 600;
+  white-space: nowrap;
   cursor: help;
+}
+.lb-pm {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+.lb-version {
+  margin-left: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+.lb-name a {
+  color: inherit;
+  text-decoration-color: var(--border-strong);
+}
+.lb-name a:hover {
+  text-decoration-color: var(--accent);
+}
+
+/* ---------- Rating chart (bot page) ---------- */
+
+.version-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.version-tabs a {
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+.version-tabs a.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-10);
+}
+.chart-caption {
+  margin: -4px 0 8px;
+}
+.rating-chart {
+  position: relative;
+}
+.rating-chart svg {
+  display: block;
+  touch-action: pan-y;
+}
+.rating-chart .grid line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.rating-chart .tick {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+}
+.rating-chart .tick.y {
+  text-anchor: end;
+  dominant-baseline: middle;
+}
+.rating-chart .band {
+  fill: var(--chart-band);
+}
+.rating-chart .line {
+  fill: none;
+  stroke: var(--chart-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.rating-chart .dot {
+  fill: var(--chart-line);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+.rating-chart .crosshair {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.rating-chart .end-label {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  dominant-baseline: middle;
+}
+.chart-tip {
+  position: absolute;
+  pointer-events: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.chart-tip strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tip .pm {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.chart-tip span {
+  display: block;
+  color: var(--text-soft);
+}
+.chart-tip .pm,
+.chart-tip strong span {
+  display: inline;
+}
+.chart-tip .muted {
+  color: var(--muted);
+}
+.chart-table {
+  margin-top: 12px;
+}
+.chart-table summary {
+  cursor: pointer;
+  color: var(--text-soft);
 }
 
 .rank-dot {

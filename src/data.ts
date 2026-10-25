@@ -5,12 +5,50 @@ import { tables, type DbConnection } from "./module_bindings";
 import type {
   Auction,
   AuctionResult,
+  BotStats,
   MatchParticipant,
   TournamentEntry,
   WordPlay,
 } from "./module_bindings/types";
+import { fmtTimestamp } from "./util";
 
 export type BotNames = (botId: bigint | null | undefined) => string;
+
+// Every rated bot's current stats. Stats outlive a bot whose team was
+// dissolved, so those are left out.
+export function liveBotStats(conn: DbConnection | null): BotStats[] {
+  if (!conn) return [];
+  return [...conn.db.botStats.iter()].filter(
+    (s) => conn.db.bot.id.find(s.botId) != null,
+  );
+}
+
+// Which version of a bot is current, and which version played a match.
+// Version 1 runs from the bot's creation; `botVersion` says when each later
+// one started.
+export type BotVersions = {
+  current: (botId: bigint) => number;
+  // The version that a match created at `at` (ms since the epoch) counts
+  // for, as the module decides it.
+  at: (botId: bigint, at: number) => number;
+};
+
+export function botVersions(conn: DbConnection | null): BotVersions {
+  const starts = new Map<bigint, { version: number; at: number }[]>();
+  if (conn) {
+    for (const v of conn.db.botVersion.iter()) {
+      const list = starts.get(v.botId) ?? [];
+      list.push({ version: v.version, at: fmtTimestamp(v.startedAt) });
+      starts.set(v.botId, list);
+    }
+  }
+  const at = (botId: bigint, until: number) =>
+    (starts.get(botId) ?? []).reduce(
+      (version, s) => (s.at <= until ? Math.max(version, s.version) : version),
+      1,
+    );
+  return { current: (botId) => at(botId, Infinity), at };
+}
 
 // Look up bots by id, falling back to the id for a bot we haven't seen.
 export function botNames(conn: DbConnection | null): BotNames {

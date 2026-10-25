@@ -10,10 +10,9 @@ import { identityFromClaims } from "./identity";
 import { DEFAULT_BAG, lengthMultiplier, letterValue } from "./letters";
 import {
   eloRatingPeriod,
-  wengLinRatingPeriod,
+  plackettLuce,
   type EloRating,
   type Outcome,
-  type WengLinRating,
 } from "./ratings";
 import type spacetimedb from "./schema";
 import type {
@@ -378,19 +377,78 @@ export function onMatchEnded(ctx: Ctx, matchId: bigint) {
 
 // ---------- ELO ----------
 
-function getOrInitStats(ctx: Ctx, botId: bigint): BotStats {
-  return (
-    ctx.db.botStats.botId.find(botId) ?? {
-      botId,
-      rating: 1000,
-      openskillMu: 25.0,
-      openskillSigma: 25.0 / 3.0,
-      matchesPlayed: 0,
-      wins: 0,
-      totalScore: 0n,
-      lastPlayed: undefined,
+// The bot's newest version, which new matches count for.
+export function currentVersion(ctx: Ctx, botId: bigint): number {
+  let version = 1;
+  for (const v of ctx.db.botVersion.versionByBot.filter(botId)) {
+    version = Math.max(version, v.version);
+  }
+  return version;
+}
+
+// The version of the bot that a match created at `createdAt` counts for.
+function versionAt(ctx: Ctx, botId: bigint, createdAt: Timestamp): number {
+  let version = 1;
+  for (const v of ctx.db.botVersion.versionByBot.filter(botId)) {
+    if (v.startedAt.microsSinceUnixEpoch <= createdAt.microsSinceUnixEpoch) {
+      version = Math.max(version, v.version);
     }
+  }
+  return version;
+}
+
+// One version of a bot's stats. The current version's are in `botStats`,
+// retired versions' in `retiredBotStats`.
+function getOrInitStats(ctx: Ctx, botId: bigint, version: number): BotStats {
+  const fresh: BotStats = {
+    botId,
+    rating: 1000,
+    openskillMu: 25.0,
+    openskillSigma: 25.0 / 3.0,
+    matchesPlayed: 0,
+    wins: 0,
+    totalScore: 0n,
+    lastPlayed: undefined,
+  };
+  if (version === currentVersion(ctx, botId)) {
+    return ctx.db.botStats.botId.find(botId) ?? fresh;
+  }
+  const retired = retiredStats(ctx, botId, version);
+  if (!retired) return fresh;
+  return {
+    botId,
+    rating: retired.rating,
+    openskillMu: retired.openskillMu,
+    openskillSigma: retired.openskillSigma,
+    matchesPlayed: retired.matchesPlayed,
+    wins: retired.wins,
+    totalScore: retired.totalScore,
+    lastPlayed: retired.lastPlayed,
+  };
+}
+
+function retiredStats(ctx: Ctx, botId: bigint, version: number) {
+  return [...ctx.db.retiredBotStats.retiredByBot.filter(botId)].find(
+    (r) => r.version === version,
   );
+}
+
+// Saves one version of a bot's stats where `getOrInitStats` finds them.
+export function saveStats(ctx: Ctx, version: number, stats: BotStats) {
+  if (version === currentVersion(ctx, stats.botId)) {
+    if (ctx.db.botStats.botId.find(stats.botId) != null) {
+      ctx.db.botStats.botId.update(stats);
+    } else {
+      ctx.db.botStats.insert(stats);
+    }
+    return;
+  }
+  const retired = retiredStats(ctx, stats.botId, version);
+  if (retired) {
+    ctx.db.retiredBotStats.id.update({ ...retired, ...stats });
+  } else {
+    ctx.db.retiredBotStats.insert({ id: 0n, version, ...stats });
+  }
 }
 
 function outcome(mine: bigint, theirs: bigint): Outcome {
@@ -403,14 +461,27 @@ export function updateEloAtMatchEnd(ctx: Ctx, matchId: bigint) {
     return;
   }
   sortDescending(placed, (p) => p.score);
+  // The match's own times, so a backfill dates history rows and picks
+  // versions as they were when the match was played.
+  const match = ctx.db.matchState.id.find(matchId);
+  const endedAt = match?.endedAt ?? ctx.timestamp;
+  const versions = placed.map((p) =>
+    versionAt(ctx, p.botId, match?.createdAt ?? ctx.timestamp),
+  );
 
   // Snapshot all ratings before any updates
-  const snapshots = placed.map((p) => getOrInitStats(ctx, p.botId));
+  const snapshots = placed.map((p, idx) =>
+    getOrInitStats(ctx, p.botId, versions[idx]!),
+  );
   const preElo: EloRating[] = snapshots.map((s) => ({ rating: s.rating }));
-  const preWl: WengLinRating[] = snapshots.map((s) => ({
-    rating: s.openskillMu,
-    uncertainty: s.openskillSigma,
-  }));
+  // OpenSkill rates the match as one result, everyone at once.
+  const newWl = plackettLuce(
+    snapshots.map((s, idx) => ({
+      rating: s.openskillMu,
+      uncertainty: s.openskillSigma,
+      place: placed.findIndex((p) => p.score === placed[idx]!.score),
+    })),
+  );
 
   placed.forEach((p, idx) => {
     const others = placed
@@ -420,33 +491,32 @@ export function updateEloAtMatchEnd(ctx: Ctx, matchId: bigint) {
       ([other, j]) =>
         [preElo[j]!, outcome(p.score, other.score)] as [EloRating, Outcome],
     );
-    const wlResults = others.map(
-      ([other, j]) =>
-        [preWl[j]!, outcome(p.score, other.score)] as [WengLinRating, Outcome],
-    );
 
     const newElo = eloRatingPeriod(preElo[idx]!, eloResults);
     const newRating = Math.max(roundToI32(newElo.rating), 0);
-    const newWl = wengLinRatingPeriod(preWl[idx]!, wlResults);
 
-    const existing = getOrInitStats(ctx, p.botId);
+    const existing = getOrInitStats(ctx, p.botId, versions[idx]!);
     // Everyone tied on the top score shares the win.
     const wasWin = p.score === placed[0]!.score;
     const stats: BotStats = {
       ...existing,
       rating: newRating,
-      openskillMu: newWl.rating,
-      openskillSigma: newWl.uncertainty,
+      openskillMu: newWl[idx]!.rating,
+      openskillSigma: newWl[idx]!.uncertainty,
       matchesPlayed: existing.matchesPlayed + 1,
       wins: existing.wins + (wasWin ? 1 : 0),
       totalScore: existing.totalScore + p.score,
       lastPlayed: ctx.timestamp,
     };
-    if (ctx.db.botStats.botId.find(p.botId) != null) {
-      ctx.db.botStats.botId.update(stats);
-    } else {
-      ctx.db.botStats.insert(stats);
-    }
+    saveStats(ctx, versions[idx]!, stats);
+    ctx.db.ratingHistory.insert({
+      id: 0n,
+      botId: p.botId,
+      matchId,
+      at: endedAt,
+      openskillMu: stats.openskillMu,
+      openskillSigma: stats.openskillSigma,
+    });
   });
 }
 

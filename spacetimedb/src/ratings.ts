@@ -1,7 +1,8 @@
-// Elo and Weng-Lin (OpenSkill) rating periods, ported from the Rust
-// `skillratings` crate (0.29) that the module used before. The arithmetic
-// follows the crate operation for operation, including its fused
-// multiply-adds and Rust's `exp` and `powf`, so ratings come out the same.
+// Elo and OpenSkill ratings. Elo is ported from the Rust `skillratings`
+// crate (0.29) that the module used before, operation for operation,
+// including its fused multiply-adds and Rust's `powf`, so it comes out the
+// same. OpenSkill uses the Plackett-Luce model, which rates a whole
+// free-for-all at once.
 
 import { exp, pow } from "./libm";
 
@@ -31,81 +32,58 @@ export function eloRatingPeriod(
   return { rating: playerRating };
 }
 
-// ---------- Weng-Lin ----------
+// ---------- OpenSkill (Plackett-Luce) ----------
 
 export type WengLinRating = { rating: number; uncertainty: number };
 
-const WENG_LIN_BETA = 25.0 / 6.0;
-const WENG_LIN_UNCERTAINTY_TOLERANCE = 0.000_001;
+// A bot's rating going into a match, and where it finished: 0 for first,
+// with bots level on points sharing a place.
+export type Placed = WengLinRating & { place: number };
 
-export function wengLinRatingPeriod(
-  player: WengLinRating,
-  results: [WengLinRating, Outcome][],
-): WengLinRating {
-  let playerRating = player.rating;
-  let playerUncertainty = player.uncertainty;
+const BETA_SQ = (25.0 / 6.0) ** 2;
+const KAPPA = 0.000_1;
 
-  for (const [opponent, result] of results) {
-    const c = Math.sqrt(
-      fma(
-        2.0,
-        WENG_LIN_BETA * WENG_LIN_BETA,
-        fma(
-          playerUncertainty,
-          playerUncertainty,
-          opponent.uncertainty * opponent.uncertainty,
-        ),
-      ),
-    );
-
-    const p = pValue(playerRating, opponent.rating, c);
-    const outcome = chessPoints(result);
-
-    playerRating = newRating(playerRating, playerUncertainty, c, p, outcome);
-    playerUncertainty = newUncertainty(
-      playerUncertainty,
-      c,
-      p,
-      WENG_LIN_UNCERTAINTY_TOLERANCE,
-    );
-  }
-
-  return { rating: playerRating, uncertainty: playerUncertainty };
-}
-
-function pValue(ratingOne: number, ratingTwo: number, cValue: number): number {
-  const e1 = exp(ratingOne / cValue);
-  const e2 = exp(ratingTwo / cValue);
-  return e1 / (e1 + e2);
-}
-
-function newRating(
-  playerRating: number,
-  playerUncertainty: number,
-  cValue: number,
-  pValue: number,
-  score: number,
-): number {
-  return fma(
-    (playerUncertainty * playerUncertainty) / cValue,
-    score - pValue,
-    playerRating,
+// One match rated as a single result under the Plackett-Luce model (Weng
+// and Lin 2011, algorithm 4), each bot a team of one, so a 6-bot match is
+// one observation rather than 15 separate games. Gives what the `openskill`
+// package's default `rate` gives.
+export function plackettLuce(players: Placed[]): WengLinRating[] {
+  const c = Math.sqrt(
+    players.reduce(
+      (sum, p) => sum + p.uncertainty * p.uncertainty + BETA_SQ,
+      0,
+    ),
   );
-}
-
-function newUncertainty(
-  playerUncertainty: number,
-  cValue: number,
-  pValue: number,
-  uncertaintyTolerance: number,
-): number {
-  const ratio = playerUncertainty / cValue;
-  const eta = ratio * ratio * ratio * pValue * (1.0 - pValue);
-  return Math.sqrt(
-    playerUncertainty *
-      playerUncertainty *
-      Math.max(1.0 - eta, uncertaintyTolerance),
+  const strength = players.map((p) => exp(p.rating / c));
+  // For each place, the strength of everyone still in the running for it.
+  const field = players.map((q) =>
+    players.reduce(
+      (sum, p, i) => (p.place >= q.place ? sum + strength[i]! : sum),
+      0,
+    ),
   );
+  const tied = players.map(
+    (q) => players.filter((p) => p.place === q.place).length,
+  );
+
+  return players.map((p, i) => {
+    let omega = 0;
+    let delta = 0;
+    players.forEach((q, j) => {
+      if (q.place > p.place) return;
+      const share = strength[i]! / field[j]!;
+      omega += (i === j ? 1 - share : -share) / tied[j]!;
+      delta += (share * (1 - share)) / tied[j]!;
+    });
+    const sigmaSq = p.uncertainty * p.uncertainty;
+    const gamma = p.uncertainty / c;
+    return {
+      rating: p.rating + omega * (sigmaSq / c),
+      uncertainty:
+        p.uncertainty *
+        Math.sqrt(Math.max(1 - gamma * delta * (sigmaSq / (c * c)), KAPPA)),
+    };
+  });
 }
 
 // ---------- Fused multiply-add ----------

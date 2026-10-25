@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { DB_NAME, HOST, STARTER_ENV, useConn } from "../connection";
 import { DbConnection } from "../module_bindings";
 import type { BotCredential } from "../module_bindings/types";
-import { myTeam } from "../data";
+import { botVersions, myTeam } from "../data";
 import { fmtDateTime, fmtTimestamp } from "../util";
 import { PageHeader, Panel, ShortIdentity, useAction } from "../ui";
 
@@ -44,6 +44,7 @@ export default function Team() {
           {credentials.filter((c) => c.connected).length} currently connected
         </div>
       </Panel>
+      <NewVersion conn={conn} botId={team.botId} />
       <TokenGenerator conn={conn} botId={team.botId} botName={team.botName} />
       <Credentials credentials={credentials} />
       {team.role.tag === "Owner" && (
@@ -194,6 +195,47 @@ function TokenGenerator({
           </div>
         </>
       )}
+    </Panel>
+  );
+}
+
+// Starting a new version starts the bot's rating over, so it takes a second
+// click to confirm.
+function NewVersion({ conn, botId }: { conn: DbConnection; botId: bigint }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, run] = useAction();
+  const version = botVersions(conn).current(botId);
+  return (
+    <Panel full title={`Version ${version}`}>
+      <p>
+        Changed your bot enough that its rating no longer fits? Start a new
+        version and its rating starts over at 1500, provisional until it has
+        played about 20 to 30 matches. Version {version} stays on the
+        leaderboard as a retired row, and its chart stays on{" "}
+        <Link to={`/bots/${botId}`}>your bot's page</Link>. A match already
+        under way still counts for version {version}.
+      </p>
+      {confirming ? (
+        <div className="actions">
+          <button
+            className="button"
+            onClick={() => {
+              setConfirming(false);
+              run(conn.reducers.startNewBotVersion({}));
+            }}
+          >
+            Start version {version + 1}
+          </button>
+          <button className="button quiet" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button className="button" onClick={() => setConfirming(true)}>
+          Start a new version
+        </button>
+      )}
+      {error && <p className="error">{error}</p>}
     </Panel>
   );
 }

@@ -119,6 +119,10 @@ export function fmtAgo(ms: number): string {
 export const plural = (n: number, one: string, many: string) =>
   n === 1 ? one : many;
 
+// A change with its sign: "+12", "−8", "±0".
+export const signed = (n: number) =>
+  n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "±0";
+
 // Standard competition ranking over a list sorted best-first: equal values
 // share a rank, and the next rank skips past them (1, 2, 2, 4).
 export function competitionRank<T, V>(
