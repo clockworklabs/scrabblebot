@@ -163,7 +163,11 @@ export function requireScheduler(ctx: Ctx): void {
 }
 
 export function callerBotId(ctx: Ctx): bigint | undefined {
-  return ctx.db.botCredential.identity.find(ctx.sender)?.botId;
+  const botId = ctx.db.botCredential.identity.find(ctx.sender)?.botId;
+  if (botId !== undefined && ctx.db.botBan.botId.find(botId)) {
+    throw new SenderError("This bot is banned");
+  }
+  return botId;
 }
 
 // ---------- Sim bots ----------
@@ -245,6 +249,10 @@ export function startMatchWith(
   const missing = participants.find((id) => ctx.db.bot.id.find(id) == null);
   if (missing !== undefined) {
     return { err: `Unknown bot in roster: ${missing}` };
+  }
+  const banned = participants.find((id) => ctx.db.botBan.botId.find(id) != null);
+  if (banned !== undefined) {
+    return { err: `Banned bot in roster: ${banned}` };
   }
   const bagTotal = DEFAULT_BAG.reduce((sum, [, count]) => sum + count, 0);
   const { auctionDurationMs, startingRackSize } = matchDefaults(ctx);
@@ -807,7 +815,7 @@ export function simulateBids(ctx: Ctx, auction: Auction) {
     if (!bot) {
       continue;
     }
-    if (!bot.isSimulated) {
+    if (!bot.isSimulated || ctx.db.botBan.botId.find(bot.id)) {
       continue;
     }
     const jitter = BigInt(
@@ -847,6 +855,9 @@ export function replaceBid(
 }
 
 function simulateWordPlay(ctx: Ctx, matchId: bigint, botId: bigint) {
+  if (ctx.db.botBan.botId.find(botId)) {
+    return;
+  }
   const participant = findParticipant(ctx, matchId, botId);
   if (!participant) {
     return;

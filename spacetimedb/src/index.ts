@@ -514,6 +514,7 @@ export const leaveTeam = spacetimedb.reducer((ctx) => {
       for (const lid of lobbyRows) {
         ctx.db.lobbyMember.id.delete(lid);
       }
+      ctx.db.botBan.botId.delete(bid);
       ctx.db.bot.id.delete(bid);
     }
     const inviteIds = [...ctx.db.teamInvite.inviteByTeam.filter(teamId)].map(
@@ -904,6 +905,64 @@ export const lobbyTimeoutTick = spacetimedb.reducer(
   },
 );
 
+// ---------- Bot bans ----------
+
+// A ban removes pre-start tournament registrations and open-lobby seats.
+// Existing match records stay intact, but the bot can no longer bid or play
+// words. Refuse bans of active tournament entrants: removing them mid-event
+// would invalidate round progression and standings.
+export const banBot = spacetimedb.reducer(
+  { botId: t.u64() },
+  (ctx, { botId }) => {
+    requireAdmin(ctx);
+    const bot = ctx.db.bot.id.find(botId);
+    if (!bot) {
+      throw new SenderError("Unknown bot");
+    }
+    for (const entry of ctx.db.tournamentEntry.teByBot.filter(botId)) {
+      const tour = ctx.db.tournament.id.find(entry.tournamentId);
+      if (tour && isUnderway(tour) && !entry.eliminated) {
+        throw new SenderError("Cannot ban an active tournament entrant");
+      }
+    }
+    if (!ctx.db.botBan.botId.find(botId)) {
+      ctx.db.botBan.insert({
+        botId,
+        bannedAt: ctx.timestamp,
+        bannedBy: resolveHuman(ctx),
+      });
+    }
+    for (const entry of [...ctx.db.tournamentEntry.teByBot.filter(botId)]) {
+      const tour = ctx.db.tournament.id.find(entry.tournamentId);
+      if (tour?.status.tag === "Registration") {
+        ctx.db.tournamentEntry.id.delete(entry.id);
+      }
+    }
+    for (const member of [...ctx.db.lobbyMember.lmByBot.filter(botId)]) {
+      if (ctx.db.lobby.id.find(member.lobbyId)?.status.tag === "Open") {
+        ctx.db.lobbyMember.id.delete(member.id);
+      }
+    }
+    for (const bid of [...ctx.db.pendingBid.iter()]) {
+      if (bid.bidderBotId === botId) {
+        ctx.db.pendingBid.id.delete(bid.id);
+      }
+    }
+    console.info(`Bot ${botId} banned`);
+  },
+);
+
+// Unbanning restores the bot's ability to act with its existing credentials.
+// It does not re-register the bot for a tournament or rejoin a lobby.
+export const unbanBot = spacetimedb.reducer(
+  { botId: t.u64() },
+  (ctx, { botId }) => {
+    requireAdmin(ctx);
+    ctx.db.botBan.botId.delete(botId);
+    console.info(`Bot ${botId} unbanned`);
+  },
+);
+
 // ---------- Tournament ----------
 
 // An admin creates a tournament, bots register for it from their own
@@ -986,7 +1045,11 @@ export const registerSimBots = spacetimedb.reducer(
     requireAdmin(ctx);
     requireRegistration(ctx, tournamentId);
     for (const bot of [...ctx.db.bot.iter()]) {
-      if (bot.isSimulated && !entryFor(ctx, tournamentId, bot.id)) {
+      if (
+        bot.isSimulated &&
+        !ctx.db.botBan.botId.find(bot.id) &&
+        !entryFor(ctx, tournamentId, bot.id)
+      ) {
         addEntry(ctx, tournamentId, bot.id);
       }
     }

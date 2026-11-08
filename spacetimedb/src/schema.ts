@@ -90,6 +90,18 @@ export const bot = table(
 );
 export type Bot = Infer<typeof bot.rowType>;
 
+// Admin-managed ban. Keep this separate from credentials: teams can mint new
+// credentials, but a banned bot id must not be able to play with any of them.
+export const botBan = table(
+  { public: true },
+  t.row("BotBan", {
+    botId: t.u64().primaryKey(),
+    bannedAt: t.timestamp(),
+    bannedBy: t.identity(),
+  }),
+);
+export type BotBan = Infer<typeof botBan.rowType>;
+
 // One row per credential authorized to act as a bot. Multiple credentials
 // per bot are allowed (the team adds new ones over time; old ones keep
 // working).
@@ -704,6 +716,7 @@ export type TournamentMatch = Infer<typeof tournamentMatch.rowType>;
 
 const spacetimedb = schema({
   bot,
+  botBan,
   botCredential,
   humanLink,
   credentialNonce,
