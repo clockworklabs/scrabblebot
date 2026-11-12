@@ -52,8 +52,8 @@ export function heldForTournament(ctx: Ctx, botId: bigint): boolean {
   return false;
 }
 
-// Deletes the entries of bots deleted since they registered (their team
-// dissolved), which can't play, and returns the rest.
+// Deletes entries for deleted or banned bots, which can't play, and returns
+// the rest. This also protects start from registrations predating a ban.
 export function dropEntriesWithoutBots(
   ctx: Ctx,
   tournamentId: bigint,
@@ -62,7 +62,7 @@ export function dropEntriesWithoutBots(
   for (const e of [
     ...ctx.db.tournamentEntry.teByTournament.filter(tournamentId),
   ]) {
-    if (ctx.db.bot.id.find(e.botId)) {
+    if (ctx.db.bot.id.find(e.botId) && !ctx.db.botBan.botId.find(e.botId)) {
       entries.push(e);
     } else {
       ctx.db.tournamentEntry.id.delete(e.id);

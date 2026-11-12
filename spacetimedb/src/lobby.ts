@@ -51,12 +51,14 @@ export function resolveLobby(ctx: Ctx, lobbyId: bigint, padWithSims: boolean) {
     return; // already handled
   }
 
-  // Skip members whose bot has since been deleted (its team dissolved),
-  // or is being held for a tournament.
+  // Skip deleted or banned bots, and bots held for a tournament.
   const roster = [...ctx.db.lobbyMember.lmByLobby.filter(lobbyId)]
     .map((m) => m.botId)
     .filter(
-      (id) => ctx.db.bot.id.find(id) != null && !heldForTournament(ctx, id),
+      (id) =>
+        ctx.db.bot.id.find(id) != null &&
+        ctx.db.botBan.botId.find(id) == null &&
+        !heldForTournament(ctx, id),
     );
 
   if (padWithSims) {
@@ -66,7 +68,12 @@ export function resolveLobby(ctx: Ctx, lobbyId: bigint, padWithSims: boolean) {
     // avoid putting the same sim in *this* lobby twice.
     const inRoster = new Set(roster);
     const availableSims = [...ctx.db.bot.iter()]
-      .filter((b) => b.isSimulated && !inRoster.has(b.id))
+      .filter(
+        (b) =>
+          b.isSimulated &&
+          !inRoster.has(b.id) &&
+          ctx.db.botBan.botId.find(b.id) == null,
+      )
       .map((b) => b.id);
     // Shuffle so we don't always grab the same sim bots first.
     shuffle(ctx, availableSims);
