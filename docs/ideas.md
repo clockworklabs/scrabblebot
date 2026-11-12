@@ -27,3 +27,4 @@
 - Variables to change the meta every hackathon.
 - Better performance for normal gameplay.
 - Local network, if possible.
+- Disallow bots from previous games from connecting. You shouldn't be able to reuse the same bot across competitions.
